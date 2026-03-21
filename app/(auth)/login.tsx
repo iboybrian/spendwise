@@ -73,21 +73,29 @@ export default function LoginScreen() {
                 setLoading(false);
                 return;
             }
+            const redirectUrl = makeRedirectUri({ scheme: 'spendwise' });
             const { data, error } = await supabase.auth.signUp({
                 email,
                 password,
-                options: { data: { full_name: fullName } }
+                options: {
+                    data: { full_name: fullName },
+                    emailRedirectTo: redirectUrl,
+                }
             });
             if (error) {
                 Alert.alert('Authentication Error', error.message);
                 setLoading(false);
                 return;
             }
-            // Some Supabase configs auto-confirm; handle both cases
+            // If session exists, Supabase auto-confirmed → redirect
             if (data.session) {
                 await fetchProfileAndRedirect(data.session.user.id, data.session);
             } else {
-                Alert.alert('Success', 'Account created! Check your email to verify, then log in.');
+                // Email confirmation required — don't redirect or update store
+                Alert.alert(
+                    'Check your email!',
+                    'We sent a validation link to your inbox. Please verify your email to log in.'
+                );
             }
         }
         setLoading(false);

@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { useEffect, useCallback } from 'react';
+import * as Linking from 'expo-linking';
 import { supabase } from '@/lib/supabase';
 import { useStore } from '@/store/useStore';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -53,6 +54,48 @@ export default function RootLayout() {
     );
 
     return () => subscription.unsubscribe();
+  }, []);
+
+  // Deep link handler for Supabase email confirmation & magic links
+  useEffect(() => {
+    const handleDeepLink = async (event: { url: string }) => {
+      const url = event.url;
+      if (!url) return;
+
+      try {
+        // Supabase appends tokens as hash fragments: #access_token=...&refresh_token=...
+        const hashIndex = url.indexOf('#');
+        if (hashIndex === -1) return;
+
+        const hashParams = new URLSearchParams(url.substring(hashIndex + 1));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+
+        if (accessToken && refreshToken) {
+          // Set the session — this triggers onAuthStateChange above,
+          // which updates Zustand and the navigation guard redirects automatically
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (error) {
+            console.error('Deep link session error:', error.message);
+          }
+        }
+      } catch (e) {
+        console.error('Deep link handling error:', e);
+      }
+    };
+
+    // Handle the URL that opened the app (cold start)
+    Linking.getInitialURL().then((url) => {
+      if (url) handleDeepLink({ url });
+    });
+
+    // Handle URLs while the app is already open (warm start)
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+
+    return () => subscription.remove();
   }, []);
 
   // Navigation guard
