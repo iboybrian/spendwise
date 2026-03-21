@@ -15,6 +15,7 @@ import { makeRedirectUri } from 'expo-auth-session';
 export default function LoginScreen() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [fullName, setFullName] = useState('');
     const [loading, setLoading] = useState(false);
     const [googleLoading, setGoogleLoading] = useState(false);
@@ -48,9 +49,18 @@ export default function LoginScreen() {
         }
     };
 
+    // Cross-platform alert: Alert.alert is a no-op on web
+    const showAlert = (title: string, message: string) => {
+        if (Platform.OS === 'web') {
+            window.alert(`${title}\n\n${message}`);
+        } else {
+            Alert.alert(title, message);
+        }
+    };
+
     const handleAuth = async () => {
         if (!email || !password) {
-            Alert.alert('Error', 'Please enter both email and password.');
+            showAlert('Error', 'Please enter both email and password.');
             return;
         }
 
@@ -59,7 +69,7 @@ export default function LoginScreen() {
         if (isLogin) {
             const { data, error } = await supabase.auth.signInWithPassword({ email, password });
             if (error) {
-                Alert.alert('Authentication Error', error.message);
+                showAlert('Authentication Error', error.message);
                 setLoading(false);
                 return;
             }
@@ -69,33 +79,55 @@ export default function LoginScreen() {
             }
         } else {
             if (!fullName) {
-                Alert.alert('Error', 'Please enter your full name.');
+                showAlert('Error', 'Please enter your full name.');
                 setLoading(false);
                 return;
             }
-            const redirectUrl = makeRedirectUri({ scheme: 'spendwise' });
-            const { data, error } = await supabase.auth.signUp({
-                email,
-                password,
-                options: {
-                    data: { full_name: fullName },
-                    emailRedirectTo: redirectUrl,
+            if (password !== confirmPassword) {
+                showAlert('Error', 'Passwords do not match. Please try again.');
+                setLoading(false);
+                return;
+            }
+            try {
+                // Build redirect URL for deep linking (may fail on web)
+                let redirectUrl: string | undefined;
+                try {
+                    redirectUrl = makeRedirectUri({ scheme: 'spendwise' });
+                } catch {
+                    // On web or unsupported platforms, skip the redirect
                 }
-            });
-            if (error) {
-                Alert.alert('Authentication Error', error.message);
-                setLoading(false);
-                return;
-            }
-            // If session exists, Supabase auto-confirmed → redirect
-            if (data.session) {
-                await fetchProfileAndRedirect(data.session.user.id, data.session);
-            } else {
-                // Email confirmation required — don't redirect or update store
-                Alert.alert(
-                    'Check your email!',
-                    'We sent a validation link to your inbox. Please verify your email to log in.'
-                );
+
+                const { data, error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        data: { full_name: fullName },
+                        ...(redirectUrl ? { emailRedirectTo: redirectUrl } : {}),
+                    }
+                });
+                if (error) {
+                    showAlert('Authentication Error', error.message);
+                    setLoading(false);
+                    return;
+                }
+                // Check for duplicate account (Supabase returns user with empty identities)
+                if (data?.user?.identities?.length === 0) {
+                    showAlert('Account already exists', 'An account with this email already exists. Please log in instead.');
+                    setLoading(false);
+                    return;
+                }
+                // If session exists, Supabase auto-confirmed → redirect
+                if (data.session) {
+                    await fetchProfileAndRedirect(data.session.user.id, data.session);
+                } else {
+                    // Email confirmation required — don't redirect or update store
+                    showAlert(
+                        'Check your email!',
+                        'We sent a validation link to your inbox. Please verify your email to log in.'
+                    );
+                }
+            } catch (e: any) {
+                showAlert('Sign Up Error', e.message || 'Something went wrong.');
             }
         }
         setLoading(false);
@@ -129,9 +161,31 @@ export default function LoginScreen() {
                 }
             }
         } catch (err: any) {
-            Alert.alert('Google Sign-In Error', err.message || 'Something went wrong.');
+                showAlert('Google Sign-In Error', err.message || 'Something went wrong.');
         } finally {
             setGoogleLoading(false);
+        }
+    };
+
+    const handleForgotPassword = async () => {
+        if (!email) {
+            showAlert('Error', 'Please enter your email address first.');
+            return;
+        }
+        setLoading(true);
+        try {
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: 'https://spendwise-topaz.vercel.app/reset',
+            });
+            if (error) {
+                showAlert('Error', error.message);
+            } else {
+                showAlert('Check your email!', 'We sent a password reset link to your inbox.');
+            }
+        } catch (e: any) {
+            showAlert('Error', e.message || 'Something went wrong.');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -221,6 +275,20 @@ export default function LoginScreen() {
                         </TouchableOpacity>
                     </View>
 
+                    {!isLogin && (
+                        <View style={[styles.inputContainer, { backgroundColor: inputBgColor, borderColor }]}>
+                            <Lock color={secondaryTextColor} size={20} style={styles.inputIcon} />
+                            <TextInput
+                                style={[styles.input, { color: textColor, flex: 1 }]}
+                                placeholder="Confirm Password"
+                                placeholderTextColor={secondaryTextColor}
+                                value={confirmPassword}
+                                onChangeText={setConfirmPassword}
+                                secureTextEntry={!showPassword}
+                            />
+                        </View>
+                    )}
+
                     <TouchableOpacity
                         style={[styles.button, { backgroundColor: primaryColor, opacity: loading ? 0.7 : 1 }]}
                         onPress={handleAuth}
@@ -228,6 +296,12 @@ export default function LoginScreen() {
                     >
                         {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>{isLogin ? 'Log In' : 'Create Account'}</Text>}
                     </TouchableOpacity>
+
+                    {isLogin && (
+                        <TouchableOpacity style={styles.forgotButton} onPress={handleForgotPassword}>
+                            <Text style={[styles.forgotButtonText, { color: primaryColor }]}>Forgot Password?</Text>
+                        </TouchableOpacity>
+                    )}
 
                     <TouchableOpacity style={styles.switchButton} onPress={() => setIsLogin(!isLogin)}>
                         <Text style={[styles.switchButtonText, { color: secondaryTextColor }]}>
@@ -272,6 +346,8 @@ const styles = StyleSheet.create({
     eyeButton: { padding: 8 },
     button: { height: 56, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginTop: 6 },
     buttonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700' },
+    forgotButton: { alignItems: 'flex-end', paddingTop: 4 },
+    forgotButtonText: { fontSize: 14, fontWeight: '600' },
     switchButton: { padding: 16, alignItems: 'center' },
     switchButtonText: { fontSize: 15 },
 });
