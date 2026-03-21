@@ -61,18 +61,23 @@ export default function ProfileScreen() {
     const modalBg = isDark ? '#1A1A2E' : '#FFFFFF';
     const inputBg = isDark ? '#2D2D44' : '#F3F4F6';
 
-    const handleLogout = async () => {
-        Alert.alert('Log Out', 'Are you sure you want to log out?', [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Log Out', style: 'destructive',
-                onPress: async () => {
-                    await supabase.auth.signOut();
-                    clearSession();
-                    router.replace('/(auth)/login');
-                }
+    const performLogout = async () => {
+        await supabase.auth.signOut();
+        clearSession();
+        router.replace('/(auth)/login');
+    };
+
+    const handleLogout = () => {
+        if (Platform.OS === 'web') {
+            if (window.confirm('Are you sure you want to log out?')) {
+                performLogout();
             }
-        ]);
+        } else {
+            Alert.alert('Log Out', 'Are you sure you want to log out?', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Log Out', style: 'destructive', onPress: performLogout }
+            ]);
+        }
     };
 
     const saveField = async (field: string, value: any) => {
@@ -273,7 +278,7 @@ export default function ProfileScreen() {
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: secondaryText }]}>ACCOUNT</Text>
                     <View style={[styles.card, { backgroundColor: cardBg }]}>
-                        <TouchableOpacity style={[styles.row, { borderBottomColor: borderColor, borderBottomWidth: 1 }]}>
+                        <TouchableOpacity style={[styles.row, { borderBottomColor: borderColor, borderBottomWidth: 1 }]} onPress={() => router.push('/privacy')}>
                             <View style={styles.rowLeft}>
                                 <View style={[styles.iconBox, { backgroundColor: '#DCFCE7' }]}>
                                     <Shield color="#16A34A" size={20} />
