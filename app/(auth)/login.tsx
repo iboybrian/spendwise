@@ -167,27 +167,6 @@ export default function LoginScreen() {
         }
     };
 
-    const handleForgotPassword = async () => {
-        if (!email) {
-            showAlert('Error', 'Please enter your email address first.');
-            return;
-        }
-        setLoading(true);
-        try {
-            const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: 'https://spendwise-topaz.vercel.app/reset',
-            });
-            if (error) {
-                showAlert('Error', error.message);
-            } else {
-                showAlert('Check your email!', 'We sent a password reset link to your inbox.');
-            }
-        } catch (e: any) {
-            showAlert('Error', e.message || 'Something went wrong.');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const backgroundColor = isDark ? '#0F0F23' : '#FFFFFF';
     const textColor = isDark ? '#FFFFFF' : '#111827';
@@ -298,7 +277,7 @@ export default function LoginScreen() {
                     </TouchableOpacity>
 
                     {isLogin && (
-                        <TouchableOpacity style={styles.forgotButton} onPress={handleForgotPassword}>
+                        <TouchableOpacity style={styles.forgotButton} onPress={() => router.push('/(auth)/forgot-password')}>
                             <Text style={[styles.forgotButtonText, { color: primaryColor }]}>Forgot Password?</Text>
                         </TouchableOpacity>
                     )}
