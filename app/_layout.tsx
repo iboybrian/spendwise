@@ -7,6 +7,7 @@ import * as Linking from 'expo-linking';
 import { supabase } from '@/lib/supabase';
 import { useStore } from '@/store/useStore';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import '@/lib/i18n';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();

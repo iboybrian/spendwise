@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { useStore } from '@/store/useStore';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTranslation } from 'react-i18next';
 import {
     User, LogOut, Bell, DollarSign, Globe, Shield, ChevronRight,
     Check, Pencil, X
@@ -33,9 +34,10 @@ const LANGUAGES = [
 ];
 
 export default function ProfileScreen() {
-    const { profile, setProfile, clearSession } = useStore();
+    const { profile, setProfile, clearSession, changeLanguage } = useStore();
     const colorScheme = useColorScheme();
     const router = useRouter();
+    const { t } = useTranslation();
 
     const [notifications, setNotifications] = useState(true);
 
@@ -69,13 +71,13 @@ export default function ProfileScreen() {
 
     const handleLogout = () => {
         if (Platform.OS === 'web') {
-            if (window.confirm('Are you sure you want to log out?')) {
+            if (window.confirm(t('account.logOutConfirm'))) {
                 performLogout();
             }
         } else {
-            Alert.alert('Log Out', 'Are you sure you want to log out?', [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Log Out', style: 'destructive', onPress: performLogout }
+            Alert.alert(t('account.logOut'), t('account.logOutConfirm'), [
+                { text: t('profile.cancel'), style: 'cancel' },
+                { text: t('account.logOut'), style: 'destructive', onPress: performLogout }
             ]);
         }
     };
@@ -96,14 +98,14 @@ export default function ProfileScreen() {
             // If Supabase returned the updated row, use it (more accurate)
             if (data) setProfile(data);
         } catch (err: any) {
-            Alert.alert('Error', err.message);
+            Alert.alert(t('errors.generic'), err.message);
         }
     };
 
     const saveName = async () => {
         const name = `${firstName.trim()} ${lastName.trim()}`.trim();
         if (!name) {
-            Alert.alert('Error', 'Please enter your name.');
+            Alert.alert(t('errors.generic'), t('errors.enterName'));
             return;
         }
         await saveField('full_name', name);
@@ -113,7 +115,7 @@ export default function ProfileScreen() {
     const saveBudget = async () => {
         const budgetNum = parseFloat(newBudget);
         if (isNaN(budgetNum) || budgetNum <= 0) {
-            Alert.alert('Invalid', 'Please enter a valid number.');
+            Alert.alert(t('errors.generic'), t('errors.invalidNumber'));
             return;
         }
         await saveField('weekly_budget', budgetNum);
@@ -126,7 +128,7 @@ export default function ProfileScreen() {
     };
 
     const selectLanguage = async (code: string) => {
-        await saveField('language', code);
+        await changeLanguage(code);
         setShowLanguagePicker(false);
     };
 
@@ -137,7 +139,7 @@ export default function ProfileScreen() {
         <View style={[styles.container, { backgroundColor: bgColor }]}>
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 <View style={[styles.header, { backgroundColor: cardBg, borderBottomColor: borderColor }]}>
-                    <Text style={[styles.headerTitle, { color: textColor }]}>Profile</Text>
+                    <Text style={[styles.headerTitle, { color: textColor }]}>{t('profile.title')}</Text>
                 </View>
 
                 {/* Avatar & Name Section */}
@@ -152,7 +154,7 @@ export default function ProfileScreen() {
                         <View style={styles.nameEditContainer}>
                             <TextInput
                                 style={[styles.nameInput, { color: textColor, backgroundColor: inputBg, borderColor }]}
-                                placeholder="First Name"
+                                placeholder={t('profile.firstName')}
                                 placeholderTextColor={secondaryText}
                                 value={firstName}
                                 onChangeText={setFirstName}
@@ -160,24 +162,24 @@ export default function ProfileScreen() {
                             />
                             <TextInput
                                 style={[styles.nameInput, { color: textColor, backgroundColor: inputBg, borderColor }]}
-                                placeholder="Last Name"
+                                placeholder={t('profile.lastName')}
                                 placeholderTextColor={secondaryText}
                                 value={lastName}
                                 onChangeText={setLastName}
                             />
                             <View style={styles.nameButtons}>
                                 <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingName(false)}>
-                                    <Text style={{ color: secondaryText, fontWeight: '600' }}>Cancel</Text>
+                                    <Text style={{ color: secondaryText, fontWeight: '600' }}>{t('profile.cancel')}</Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity style={[styles.saveBtn, { backgroundColor: primaryColor }]} onPress={saveName}>
-                                    <Text style={{ color: '#FFF', fontWeight: '700' }}>Save</Text>
+                                    <Text style={{ color: '#FFF', fontWeight: '700' }}>{t('profile.save')}</Text>
                                 </TouchableOpacity>
                             </View>
                         </View>
                     ) : (
                         <TouchableOpacity onPress={() => setEditingName(true)} style={styles.nameRow}>
                             <Text style={[styles.name, { color: textColor }]}>
-                                {profile?.full_name || 'Tap to add name'}
+                                {profile?.full_name || t('profile.tapToAddName')}
                             </Text>
                             <Pencil color={secondaryText} size={16} style={{ marginLeft: 8 }} />
                         </TouchableOpacity>
@@ -187,7 +189,7 @@ export default function ProfileScreen() {
 
                 {/* Preferences */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: secondaryText }]}>PREFERENCES</Text>
+                    <Text style={[styles.sectionTitle, { color: secondaryText }]}>{t('preferences.title')}</Text>
                     <View style={[styles.card, { backgroundColor: cardBg }]}>
 
                         {/* Weekly Budget */}
@@ -196,7 +198,7 @@ export default function ProfileScreen() {
                                 <View style={[styles.iconBox, { backgroundColor: '#E0E7FF' }]}>
                                     <DollarSign color={primaryColor} size={20} />
                                 </View>
-                                <Text style={[styles.rowLabel, { color: textColor }]}>Weekly Budget</Text>
+                                <Text style={[styles.rowLabel, { color: textColor }]}>{t('preferences.weeklyBudget')}</Text>
                             </View>
                             {editingBudget ? (
                                 <View style={styles.editBudgetRow}>
@@ -208,7 +210,7 @@ export default function ProfileScreen() {
                                         autoFocus
                                     />
                                     <TouchableOpacity onPress={saveBudget}>
-                                        <Text style={{ color: primaryColor, fontWeight: '600' }}>Save</Text>
+                                        <Text style={{ color: primaryColor, fontWeight: '600' }}>{t('profile.save')}</Text>
                                     </TouchableOpacity>
                                 </View>
                             ) : (
@@ -229,7 +231,7 @@ export default function ProfileScreen() {
                                 <View style={[styles.iconBox, { backgroundColor: '#DCFCE7' }]}>
                                     <DollarSign color="#16A34A" size={20} />
                                 </View>
-                                <Text style={[styles.rowLabel, { color: textColor }]}>Currency</Text>
+                                <Text style={[styles.rowLabel, { color: textColor }]}>{t('preferences.currency')}</Text>
                             </View>
                             <View style={styles.rowRight}>
                                 <Text style={[styles.rowValue, { color: secondaryText }]}>{currentCurrency.code}</Text>
@@ -246,7 +248,7 @@ export default function ProfileScreen() {
                                 <View style={[styles.iconBox, { backgroundColor: '#FEF3C7' }]}>
                                     <Globe color="#D97706" size={20} />
                                 </View>
-                                <Text style={[styles.rowLabel, { color: textColor }]}>Language</Text>
+                                <Text style={[styles.rowLabel, { color: textColor }]}>{t('preferences.language')}</Text>
                             </View>
                             <View style={styles.rowRight}>
                                 <Text style={[styles.rowValue, { color: secondaryText }]}>
@@ -262,7 +264,7 @@ export default function ProfileScreen() {
                                 <View style={[styles.iconBox, { backgroundColor: '#FCE7F3' }]}>
                                     <Bell color="#DB2777" size={20} />
                                 </View>
-                                <Text style={[styles.rowLabel, { color: textColor }]}>Weekly Reports</Text>
+                                <Text style={[styles.rowLabel, { color: textColor }]}>{t('preferences.weeklyReports')}</Text>
                             </View>
                             <Switch
                                 value={notifications}
@@ -276,14 +278,14 @@ export default function ProfileScreen() {
 
                 {/* Account */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: secondaryText }]}>ACCOUNT</Text>
+                    <Text style={[styles.sectionTitle, { color: secondaryText }]}>{t('account.title')}</Text>
                     <View style={[styles.card, { backgroundColor: cardBg }]}>
                         <TouchableOpacity style={[styles.row, { borderBottomColor: borderColor, borderBottomWidth: 1 }]} onPress={() => router.push('/privacy')}>
                             <View style={styles.rowLeft}>
                                 <View style={[styles.iconBox, { backgroundColor: '#DCFCE7' }]}>
                                     <Shield color="#16A34A" size={20} />
                                 </View>
-                                <Text style={[styles.rowLabel, { color: textColor }]}>Privacy & Security</Text>
+                                <Text style={[styles.rowLabel, { color: textColor }]}>{t('account.privacySecurity')}</Text>
                             </View>
                             <ChevronRight color={secondaryText} size={20} />
                         </TouchableOpacity>
@@ -293,7 +295,7 @@ export default function ProfileScreen() {
                                 <View style={[styles.iconBox, { backgroundColor: '#FEE2E2' }]}>
                                     <LogOut color="#EF4444" size={20} />
                                 </View>
-                                <Text style={[styles.rowLabel, { color: '#EF4444', fontWeight: '600' }]}>Log Out</Text>
+                                <Text style={[styles.rowLabel, { color: '#EF4444', fontWeight: '600' }]}>{t('account.logOut')}</Text>
                             </View>
                         </TouchableOpacity>
                     </View>
@@ -305,7 +307,7 @@ export default function ProfileScreen() {
                 <Pressable style={styles.modalOverlay} onPress={() => setShowCurrencyPicker(false)}>
                     <Pressable style={[styles.modalCard, { backgroundColor: modalBg }]} onPress={() => { }}>
                         <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, { color: textColor }]}>Select Currency</Text>
+                            <Text style={[styles.modalTitle, { color: textColor }]}>{t('modals.selectCurrency')}</Text>
                             <TouchableOpacity onPress={() => setShowCurrencyPicker(false)}>
                                 <X color={secondaryText} size={22} />
                             </TouchableOpacity>
@@ -337,7 +339,7 @@ export default function ProfileScreen() {
                 <Pressable style={styles.modalOverlay} onPress={() => setShowLanguagePicker(false)}>
                     <Pressable style={[styles.modalCard, { backgroundColor: modalBg }]} onPress={() => { }}>
                         <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, { color: textColor }]}>Select Language</Text>
+                            <Text style={[styles.modalTitle, { color: textColor }]}>{t('modals.selectLanguage')}</Text>
                             <TouchableOpacity onPress={() => setShowLanguagePicker(false)}>
                                 <X color={secondaryText} size={22} />
                             </TouchableOpacity>
