@@ -1,11 +1,13 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Home, List, User } from 'lucide-react-native';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const { t } = useTranslation();
 
   return (
     <Tabs
@@ -16,21 +18,21 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: t('tabs.home'),
           tabBarIcon: ({ color }) => <Home color={color} size={24} />,
         }}
       />
       <Tabs.Screen
         name="expenses"
         options={{
-          title: 'Expenses',
+          title: t('tabs.expenses'),
           tabBarIcon: ({ color }) => <List color={color} size={24} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: t('tabs.profile'),
           tabBarIcon: ({ color }) => <User color={color} size={24} />,
         }}
       />
