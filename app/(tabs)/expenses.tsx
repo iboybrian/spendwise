@@ -12,6 +12,9 @@ import {
     Home as HomeIcon, Book, Package, Trash2, X,
     ChevronDown, Check, RefreshCw, Zap, Pencil
 } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
+import { PieChart } from 'react-native-gifted-charts';
+import DropDownPicker from 'react-native-dropdown-picker';
 
 const CATEGORIES = ['Food', 'Transport', 'Entertainment', 'Health', 'Shopping', 'Home', 'Education', 'Other'];
 
@@ -43,11 +46,37 @@ export default function ExpensesScreen() {
     const { profile } = useStore();
     const router = useRouter();
     const colorScheme = useColorScheme();
+    const { t } = useTranslation();
 
     const [expenses, setExpenses] = useState<any[]>([]);
     const [recurringExpenses, setRecurringExpenses] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+    // Date slicer and chart state
+    const [slicerRange, setSlicerRange] = useState<string>('This Week');
+    const [summaryData, setSummaryData] = useState<any[]>([]);
+    const [isSummaryLoading, setIsSummaryLoading] = useState(false);
+
+    // DropDown states
+    const [periodOpen, setPeriodOpen] = useState(false);
+    const [periodItems, setPeriodItems] = useState([
+        { label: t('periods.thisWeek'), value: 'This Week' },
+        { label: t('periods.monthToDate'), value: 'Month to Date' },
+        { label: t('periods.lastMonth'), value: 'Last Month' },
+        { label: t('periods.yearToDate'), value: 'Year to Date' },
+        { label: t('periods.customRange'), value: 'Custom Range' },
+    ]);
+
+    const [categoryOpen, setCategoryOpen] = useState(false);
+    const [categoryItems, setCategoryItems] = useState([
+        { label: t('categories.all'), value: 'All' },
+        ...CATEGORIES.map(c => ({ label: t(`categories.${c.toLowerCase()}`), value: c }))
+    ]);
+
+    const [showCustomDateModal, setShowCustomDateModal] = useState(false);
+    const [customStart, setCustomStart] = useState('');
+    const [customEnd, setCustomEnd] = useState('');
 
     // Add spontaneous expense modal
     const [showAddModal, setShowAddModal] = useState(false);
@@ -86,8 +115,61 @@ export default function ExpensesScreen() {
     const modalBg = isDark ? '#1A1A2E' : '#FFFFFF';
 
     useEffect(() => {
+        setPeriodItems([
+            { label: t('periods.thisWeek'), value: 'This Week' },
+            { label: t('periods.monthToDate'), value: 'Month to Date' },
+            { label: t('periods.lastMonth'), value: 'Last Month' },
+            { label: t('periods.yearToDate'), value: 'Year to Date' },
+            { label: t('periods.customRange'), value: 'Custom Range' },
+        ]);
+        setCategoryItems([
+            { label: t('categories.all'), value: 'All' },
+            ...CATEGORIES.map(c => ({ label: t(`categories.${c.toLowerCase()}`), value: c }))
+        ]);
+    }, [t]);
+
+    useEffect(() => {
         fetchData();
-    }, []);
+        fetchSummary(slicerRange);
+    }, [slicerRange]);
+
+    const fetchSummary = useCallback(async (range: string) => {
+        setIsSummaryLoading(true);
+        try {
+            let startDate = new Date();
+            let endDate = new Date();
+            
+            if (range === 'This Week') {
+                const day = startDate.getDay();
+                const diff = startDate.getDate() - day + (day === 0 ? -6 : 1); 
+                startDate.setDate(diff);
+            } else if (range === 'Month to Date') {
+                startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+            } else if (range === 'Last Month') {
+                startDate = new Date(startDate.getFullYear(), startDate.getMonth() - 1, 1);
+                endDate = new Date(endDate.getFullYear(), endDate.getMonth(), 0);
+            } else if (range === 'Year to Date') {
+                startDate = new Date(startDate.getFullYear(), 0, 1);
+            } else if (range === 'Custom Range') {
+                if (customStart && customEnd) {
+                    startDate = new Date(customStart);
+                    endDate = new Date(customEnd);
+                }
+            }
+            
+            const startStr = startDate.toISOString().split('T')[0];
+            const endStr = endDate.toISOString().split('T')[0];
+
+            const { data, error } = await supabase.rpc('get_expense_summary', { start_date: startStr, end_date: endStr });
+            if (error) throw error;
+            
+            setSummaryData(data || []);
+        } catch (err) {
+            console.error('Failed to fetch summary:', err);
+        } finally {
+            setIsSummaryLoading(false);
+        }
+    }, [profile?.id]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -172,11 +254,11 @@ export default function ExpensesScreen() {
     // Save spontaneous expense
     const handleSaveExpense = async () => {
         if (!addAmount || isNaN(Number(addAmount))) {
-            Alert.alert('Error', 'Please enter a valid amount.');
+            Alert.alert(t('common.error'), t('errors.invalidAmount'));
             return;
         }
         if (!addDescription.trim()) {
-            Alert.alert('Error', 'Please enter a description.');
+            Alert.alert(t('common.error'), t('errors.needDescription'));
             return;
         }
         setIsSaving(true);
@@ -193,8 +275,9 @@ export default function ExpensesScreen() {
             setAddAmount(''); setAddDescription(''); setAddCategory('Other');
             setShowAddModal(false);
             fetchData();
+            fetchSummary(slicerRange);
         } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to save.');
+            Alert.alert(t('common.error'), err.message || 'Failed to save.');
         } finally {
             setIsSaving(false);
         }
@@ -203,11 +286,11 @@ export default function ExpensesScreen() {
     // Save recurring expense
     const handleSaveRecurring = async () => {
         if (!recAmount || isNaN(Number(recAmount))) {
-            Alert.alert('Error', 'Please enter a valid monthly amount.');
+            Alert.alert(t('common.error'), t('errors.invalidAmount'));
             return;
         }
         if (!recDescription.trim()) {
-            Alert.alert('Error', 'Please enter a description.');
+            Alert.alert(t('common.error'), t('errors.needDescription'));
             return;
         }
         setIsSavingRec(true);
@@ -223,7 +306,7 @@ export default function ExpensesScreen() {
             setShowRecurringModal(false);
             fetchData();
         } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to save.');
+            Alert.alert(t('common.error'), err.message || 'Failed to save.');
         } finally {
             setIsSavingRec(false);
         }
@@ -232,12 +315,12 @@ export default function ExpensesScreen() {
     // Deactivate recurring expense
     const deactivateRecurring = async (id: string, description: string) => {
         Alert.alert(
-            'Remove Recurring Expense',
-            `Stop "${description}"? Past records will remain, but no new daily entries will be added.`,
+            t('expenses.removeRecurring'),
+            t('expenses.removeRecurringMsg', { description }),
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: t('common.cancel'), style: 'cancel' },
                 {
-                    text: 'Remove', style: 'destructive',
+                    text: t('common.delete'), style: 'destructive',
                     onPress: async () => {
                         await supabase.from('recurring_expenses').update({ is_active: false }).eq('id', id);
                         fetchData();
@@ -249,15 +332,16 @@ export default function ExpensesScreen() {
 
     // Delete a single expense
     const deleteExpense = async (id: string) => {
-        Alert.alert('Delete Expense', 'Are you sure?', [
-            { text: 'Cancel', style: 'cancel' },
+        Alert.alert(t('expenses.deleteExpense'), t('expenses.deleteConfirm'), [
+            { text: t('common.cancel'), style: 'cancel' },
             {
-                text: 'Delete', style: 'destructive',
+                text: t('common.delete'), style: 'destructive',
                 onPress: async () => {
                     await supabase.from('expenses').delete().eq('id', id);
                     setShowActionSheet(false);
                     setSelectedExpense(null);
                     fetchData();
+                    fetchSummary(slicerRange);
                 }
             }
         ]);
@@ -282,11 +366,11 @@ export default function ExpensesScreen() {
     // Save edited expense
     const handleSaveEdit = async () => {
         if (!editAmount || isNaN(Number(editAmount))) {
-            Alert.alert('Error', 'Please enter a valid amount.');
+            Alert.alert(t('common.error'), t('errors.invalidAmount'));
             return;
         }
         if (!editDescription.trim()) {
-            Alert.alert('Error', 'Please enter a description.');
+            Alert.alert(t('common.error'), t('errors.needDescription'));
             return;
         }
         setIsUpdating(true);
@@ -302,8 +386,9 @@ export default function ExpensesScreen() {
             setShowEditModal(false);
             setSelectedExpense(null);
             fetchData();
+            fetchSummary(slicerRange);
         } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to update.');
+            Alert.alert(t('common.error'), err.message || 'Failed to update.');
         } finally {
             setIsUpdating(false);
         }
@@ -368,7 +453,104 @@ export default function ExpensesScreen() {
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 {/* Header */}
                 <View style={[styles.header, { backgroundColor: cardBg, borderBottomColor: borderColor }]}>
-                    <Text style={[styles.headerTitle, { color: textColor }]}>Expenses</Text>
+                    <Text style={[styles.headerTitle, { color: textColor }]}>{t('expenses.title')}</Text>
+                </View>
+
+                {/* ====== Filters ====== */}
+                <View style={[styles.filtersContainer, { zIndex: 3000 }]}>
+                    <View style={[styles.dropdownWrapper, { zIndex: 3000 }]}>
+                        <DropDownPicker
+                            open={periodOpen}
+                            value={slicerRange}
+                            items={periodItems}
+                            setOpen={setPeriodOpen}
+                            setValue={setSlicerRange}
+                            setItems={setPeriodItems}
+                            onChangeValue={(val) => {
+                                if (val === 'Custom Range') setShowCustomDateModal(true);
+                            }}
+                            theme={isDark ? "DARK" : "LIGHT"}
+                            style={{ backgroundColor: inputBg, borderColor }}
+                            dropDownContainerStyle={{ backgroundColor: inputBg, borderColor }}
+                            textStyle={{ color: textColor }}
+                        />
+                    </View>
+                    <View style={[styles.dropdownWrapper, { zIndex: 2000, marginTop: 10 }]}>
+                        <DropDownPicker
+                            open={categoryOpen}
+                            value={selectedCategory || 'All'}
+                            items={categoryItems}
+                            setOpen={setCategoryOpen}
+                            setValue={(valOrCallback) => {
+                                const val = typeof valOrCallback === 'function' ? valOrCallback(selectedCategory) : valOrCallback;
+                                setSelectedCategory(val === 'All' ? null : val);
+                            }}
+                            setItems={setCategoryItems}
+                            theme={isDark ? "DARK" : "LIGHT"}
+                            style={{ backgroundColor: inputBg, borderColor }}
+                            dropDownContainerStyle={{ backgroundColor: inputBg, borderColor }}
+                            textStyle={{ color: textColor }}
+                        />
+                    </View>
+                </View>
+
+                {/* ====== Slicer & Chart ====== */}
+                <View style={[styles.chartContainer, { backgroundColor: cardBg, borderBottomColor: borderColor }]}>
+
+                    <View style={styles.chartWrapper}>
+                        {isSummaryLoading ? (
+                            <ActivityIndicator size="large" color={primaryColor} />
+                        ) : summaryData.length > 0 ? (
+                            <View style={styles.chartRow}>
+                                <View style={styles.chartCol}>
+                                    <PieChart
+                                        donut
+                                        innerRadius={55}
+                                        radius={75}
+                                        data={summaryData.map(item => ({
+                                            value: Number(item.total) || 0,
+                                            color: CATEGORY_COLORS[item.category] || '#6B7280',
+                                        }))}
+                                        centerLabelComponent={() => {
+                                            const total = summaryData.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
+                                            return (
+                                                <View style={{ justifyContent: 'center', alignItems: 'center' }}>
+                                                    <Text style={{ fontSize: 16, color: textColor, fontWeight: 'bold' }}>
+                                                        {formatCurrency(total)}
+                                                    </Text>
+                                                    <Text style={{ fontSize: 11, color: secondaryText }}>Total</Text>
+                                                </View>
+                                            );
+                                        }}
+                                    />
+                                </View>
+                                <View style={styles.legendCol}>
+                                    <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={false}>
+                                        {summaryData.map((item, idx) => {
+                                            const totalAll = summaryData.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
+                                            const val = Number(item.total) || 0;
+                                            const perc = totalAll > 0 ? ((val / totalAll) * 100).toFixed(1) : '0';
+                                            return (
+                                                <View key={idx} style={styles.legendItem}>
+                                                    <View style={[styles.legendColor, { backgroundColor: CATEGORY_COLORS[item.category] || '#6B7280' }]} />
+                                                    <View style={{ flex: 1 }}>
+                                                        <Text style={{ color: textColor, fontSize: 13, fontWeight: '500' }}>
+                                                            {t(`categories.${item.category.toLowerCase()}`, { defaultValue: item.category })}
+                                                        </Text>
+                                                        <Text style={{ color: secondaryText, fontSize: 11 }}>
+                                                            {formatCurrency(val)} ({perc}%)
+                                                        </Text>
+                                                    </View>
+                                                </View>
+                                            )
+                                        })}
+                                    </ScrollView>
+                                </View>
+                            </View>
+                        ) : (
+                            <Text style={[{ color: secondaryText, textAlign: 'center', marginTop: 20 }]}>No data for this period.</Text>
+                        )}
+                    </View>
                 </View>
 
                 {/* ====== Quick Add Buttons ====== */}
@@ -378,7 +560,7 @@ export default function ExpensesScreen() {
                         onPress={() => setShowAddModal(true)}
                     >
                         <Zap color="#FFF" size={18} />
-                        <Text style={styles.actionBtnText}>Add Expense</Text>
+                        <Text style={styles.actionBtnText}>{t('expenses.addExpense')}</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -386,14 +568,14 @@ export default function ExpensesScreen() {
                         onPress={() => setShowRecurringModal(true)}
                     >
                         <RefreshCw color="#FFF" size={18} />
-                        <Text style={styles.actionBtnText}>Add Monthly</Text>
+                        <Text style={styles.actionBtnText}>{t('expenses.addMonthly')}</Text>
                     </TouchableOpacity>
                 </View>
 
                 {/* ====== Active Recurring Expenses ====== */}
                 {recurringExpenses.length > 0 && (
                     <View style={styles.section}>
-                        <Text style={[styles.sectionTitle, { color: secondaryText }]}>MONTHLY RECURRING</Text>
+                        <Text style={[styles.sectionTitle, { color: secondaryText }]}>{t('expenses.recurringTitle')}</Text>
                         <View style={[styles.card, { backgroundColor: cardBg }]}>
                             {recurringExpenses.map((rec, i) => {
                                 const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
@@ -423,33 +605,16 @@ export default function ExpensesScreen() {
                     </View>
                 )}
 
-                {/* ====== Category Filters ====== */}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar}>
-                    <TouchableOpacity
-                        style={[styles.filterChip, !selectedCategory && { backgroundColor: primaryColor }]}
-                        onPress={() => setSelectedCategory(null)}
-                    >
-                        <Text style={[styles.filterText, { color: !selectedCategory ? '#FFF' : secondaryText }]}>All</Text>
-                    </TouchableOpacity>
-                    {CATEGORIES.map(cat => (
-                        <TouchableOpacity
-                            key={cat}
-                            style={[styles.filterChip, selectedCategory === cat && { backgroundColor: CATEGORY_COLORS[cat] }]}
-                            onPress={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
-                        >
-                            <Text style={[styles.filterText, { color: selectedCategory === cat ? '#FFF' : secondaryText }]}>{cat}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
+                {/* Category filters replaced by DropDownPicker */}
 
                 {/* ====== Expense List ====== */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: secondaryText }]}>ALL EXPENSES</Text>
+                    <Text style={[styles.sectionTitle, { color: secondaryText }]}>{t('expenses.recentTitle')}</Text>
                     {loading ? (
                         <ActivityIndicator style={{ marginTop: 20 }} />
                     ) : sortedDates.length === 0 ? (
                         <View style={[styles.emptyState, { backgroundColor: cardBg }]}>
-                            <Text style={[styles.emptyText, { color: secondaryText }]}>No expenses yet.</Text>
+                            <Text style={[styles.emptyText, { color: secondaryText }]}>{t('expenses.emptyExpenses')}</Text>
                         </View>
                     ) : (
                         sortedDates.map(date => (
@@ -472,7 +637,7 @@ export default function ExpensesScreen() {
                                             </Text>
                                             <Text style={[styles.expenseCategory, { color: secondaryText }]}>
                                                 {expense.category}
-                                                {expense.recurring_expense_id ? ' · Monthly' : ''}
+                                                {expense.recurring_expense_id ? ` · ${t('expenses.monthlyLabel')}` : ''}
                                             </Text>
                                         </View>
                                         <Text style={[styles.expenseAmount, { color: textColor }]}>
@@ -486,16 +651,57 @@ export default function ExpensesScreen() {
                 </View>
             </ScrollView>
 
+            {/* ====== CUSTOM DATE MODAL ====== */}
+            <Modal visible={showCustomDateModal} transparent animationType="slide">
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.modalCard, { backgroundColor: modalBg }]}>
+                        <Text style={[styles.modalTitle, { color: textColor, marginBottom: 16 }]}>{t('periods.customRange')}</Text>
+                        
+                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>Start Date (YYYY-MM-DD)</Text>
+                        <View style={[styles.modalInput, { backgroundColor: inputBg, borderColor, marginBottom: 12 }]}>
+                            <TextInput
+                                style={[styles.modalTextInput, { color: textColor }]}
+                                placeholder="2024-01-01" placeholderTextColor={secondaryText}
+                                value={customStart} onChangeText={setCustomStart}
+                            />
+                        </View>
+
+                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>End Date (YYYY-MM-DD)</Text>
+                        <View style={[styles.modalInput, { backgroundColor: inputBg, borderColor }]}>
+                            <TextInput
+                                style={[styles.modalTextInput, { color: textColor }]}
+                                placeholder="2024-12-31" placeholderTextColor={secondaryText}
+                                value={customEnd} onChangeText={setCustomEnd}
+                            />
+                        </View>
+
+                        <TouchableOpacity
+                            style={[styles.saveBtn, { backgroundColor: primaryColor }]}
+                            onPress={() => {
+                                setShowCustomDateModal(false);
+                                fetchSummary('Custom Range');
+                            }}
+                        >
+                            <Text style={styles.saveBtnText}>{t('common.save')}</Text>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity style={{ marginTop: 16, alignItems: 'center' }} onPress={() => setShowCustomDateModal(false)}>
+                            <Text style={{ color: secondaryText, fontSize: 16 }}>{t('common.cancel')}</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
             {/* ====== ADD SPONTANEOUS EXPENSE MODAL ====== */}
             <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)}>
                 <Pressable style={styles.modalOverlay} onPress={() => { setShowAddModal(false); setShowCatPicker(false); }}>
                     <Pressable style={[styles.modalCard, { backgroundColor: modalBg }]} onPress={() => setShowCatPicker(false)}>
                         <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, { color: textColor }]}>Add Expense</Text>
+                            <Text style={[styles.modalTitle, { color: textColor }]}>{t('expenses.addExpense')}</Text>
                             <TouchableOpacity onPress={() => setShowAddModal(false)}><X color={secondaryText} size={22} /></TouchableOpacity>
                         </View>
 
-                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>Amount</Text>
+                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.amount')}</Text>
                         <View style={[styles.modalInput, { backgroundColor: inputBg, borderColor }]}>
                             <Text style={[styles.currencyPfx, { color: secondaryText }]}>{CURRENCY_SYMBOLS[profile?.currency || 'USD'] || '$'}</Text>
                             <TextInput
@@ -506,7 +712,7 @@ export default function ExpensesScreen() {
                             />
                         </View>
 
-                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>Description</Text>
+                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.description')}</Text>
                         <View style={[styles.modalInput, { backgroundColor: inputBg, borderColor }]}>
                             <TextInput
                                 style={[styles.modalTextInput, { color: textColor }]}
@@ -515,14 +721,14 @@ export default function ExpensesScreen() {
                             />
                         </View>
 
-                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>Category</Text>
+                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.category')}</Text>
                         <CategoryPickerContent value={addCategory} onChange={setAddCategory} show={showCatPicker} setShow={setShowCatPicker} />
 
                         <TouchableOpacity
                             style={[styles.saveBtn, { backgroundColor: primaryColor, opacity: isSaving ? 0.7 : 1 }]}
                             onPress={handleSaveExpense} disabled={isSaving}
                         >
-                            {isSaving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveBtnText}>Save Expense</Text>}
+                            {isSaving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveBtnText}>{t('expenses.addExpense')}</Text>}
                         </TouchableOpacity>
                     </Pressable>
                 </Pressable>
@@ -533,14 +739,14 @@ export default function ExpensesScreen() {
                 <Pressable style={styles.modalOverlay} onPress={() => { setShowRecurringModal(false); setShowRecCatPicker(false); }}>
                     <Pressable style={[styles.modalCard, { backgroundColor: modalBg }]} onPress={() => setShowRecCatPicker(false)}>
                         <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, { color: textColor }]}>Add Monthly Expense</Text>
+                            <Text style={[styles.modalTitle, { color: textColor }]}>{t('expenses.modalRecurringTitle')}</Text>
                             <TouchableOpacity onPress={() => setShowRecurringModal(false)}><X color={secondaryText} size={22} /></TouchableOpacity>
                         </View>
                         <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
-                            This amount will be split equally across the days of the month and added daily.
+                            {t('expenses.modalRecurringSubtitle')}
                         </Text>
 
-                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>Monthly Amount</Text>
+                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('expenses.monthlyAmount')}</Text>
                         <View style={[styles.modalInput, { backgroundColor: inputBg, borderColor }]}>
                             <Text style={[styles.currencyPfx, { color: secondaryText }]}>{CURRENCY_SYMBOLS[profile?.currency || 'USD'] || '$'}</Text>
                             <TextInput
@@ -551,7 +757,7 @@ export default function ExpensesScreen() {
                             />
                         </View>
 
-                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>Description</Text>
+                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.description')}</Text>
                         <View style={[styles.modalInput, { backgroundColor: inputBg, borderColor }]}>
                             <TextInput
                                 style={[styles.modalTextInput, { color: textColor }]}
@@ -560,7 +766,7 @@ export default function ExpensesScreen() {
                             />
                         </View>
 
-                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>Category</Text>
+                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.category')}</Text>
                         <CategoryPickerContent value={recCategory} onChange={setRecCategory} show={showRecCatPicker} setShow={setShowRecCatPicker} />
 
                         {recAmount && !isNaN(Number(recAmount)) && (
@@ -575,7 +781,7 @@ export default function ExpensesScreen() {
                             style={[styles.saveBtn, { backgroundColor: '#10B981', opacity: isSavingRec ? 0.7 : 1 }]}
                             onPress={handleSaveRecurring} disabled={isSavingRec}
                         >
-                            {isSavingRec ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveBtnText}>Add Monthly Expense</Text>}
+                            {isSavingRec ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveBtnText}>{t('expenses.addMonthly')}</Text>}
                         </TouchableOpacity>
                     </Pressable>
                 </Pressable>
@@ -590,17 +796,17 @@ export default function ExpensesScreen() {
                         </Text>
                         <TouchableOpacity style={styles.actionOption} onPress={openEditModal}>
                             <Pencil color={primaryColor} size={20} />
-                            <Text style={[styles.actionOptionText, { color: textColor }]}>Edit</Text>
+                            <Text style={[styles.actionOptionText, { color: textColor }]}>{t('common.edit')}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionOption} onPress={() => selectedExpense && deleteExpense(selectedExpense.id)}>
                             <Trash2 color="#EF4444" size={20} />
-                            <Text style={[styles.actionOptionText, { color: '#EF4444' }]}>Delete</Text>
+                            <Text style={[styles.actionOptionText, { color: '#EF4444' }]}>{t('common.delete')}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.actionCancel, { backgroundColor: inputBg }]}
                             onPress={() => setShowActionSheet(false)}
                         >
-                            <Text style={[styles.actionCancelText, { color: textColor }]}>Cancel</Text>
+                            <Text style={[styles.actionCancelText, { color: textColor }]}>{t('common.cancel')}</Text>
                         </TouchableOpacity>
                     </View>
                 </Pressable>
@@ -611,11 +817,11 @@ export default function ExpensesScreen() {
                 <Pressable style={styles.modalOverlay} onPress={() => { setShowEditModal(false); setShowEditCatPicker(false); }}>
                     <Pressable style={[styles.modalCard, { backgroundColor: modalBg }]} onPress={() => setShowEditCatPicker(false)}>
                         <View style={styles.modalHeader}>
-                            <Text style={[styles.modalTitle, { color: textColor }]}>Edit Expense</Text>
+                            <Text style={[styles.modalTitle, { color: textColor }]}>{t('expenses.editExpense')}</Text>
                             <TouchableOpacity onPress={() => setShowEditModal(false)}><X color={secondaryText} size={22} /></TouchableOpacity>
                         </View>
 
-                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>Amount</Text>
+                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.amount')}</Text>
                         <View style={[styles.modalInput, { backgroundColor: inputBg, borderColor }]}>
                             <Text style={[styles.currencyPfx, { color: secondaryText }]}>{CURRENCY_SYMBOLS[profile?.currency || 'USD'] || '$'}</Text>
                             <TextInput
@@ -626,7 +832,7 @@ export default function ExpensesScreen() {
                             />
                         </View>
 
-                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>Description</Text>
+                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.description')}</Text>
                         <View style={[styles.modalInput, { backgroundColor: inputBg, borderColor }]}>
                             <TextInput
                                 style={[styles.modalTextInput, { color: textColor }]}
@@ -635,14 +841,14 @@ export default function ExpensesScreen() {
                             />
                         </View>
 
-                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>Category</Text>
+                        <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.category')}</Text>
                         <CategoryPickerContent value={editCategory} onChange={setEditCategory} show={showEditCatPicker} setShow={setShowEditCatPicker} />
 
                         <TouchableOpacity
                             style={[styles.saveBtn, { backgroundColor: primaryColor, opacity: isUpdating ? 0.7 : 1 }]}
                             onPress={handleSaveEdit} disabled={isUpdating}
                         >
-                            {isUpdating ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveBtnText}>Save Changes</Text>}
+                            {isUpdating ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveBtnText}>{t('expenses.saveChanges')}</Text>}
                         </TouchableOpacity>
                     </Pressable>
                 </Pressable>
@@ -656,6 +862,18 @@ const styles = StyleSheet.create({
     scrollContent: { paddingBottom: 40 },
     header: { paddingTop: 60, paddingBottom: 16, alignItems: 'center', borderBottomWidth: 1 },
     headerTitle: { fontSize: 20, fontWeight: '700' },
+
+    chartContainer: { paddingBottom: 20, borderBottomWidth: 1 },
+    chartWrapper: { alignItems: 'center', justifyContent: 'center', marginTop: 20, minHeight: 200 },
+
+    filtersContainer: { paddingHorizontal: 20, marginTop: 20, marginBottom: 10, position: 'relative' },
+    dropdownWrapper: { position: 'relative' },
+
+    chartRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%', paddingHorizontal: 10 },
+    chartCol: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    legendCol: { flex: 1, paddingLeft: 10 },
+    legendItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+    legendColor: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
 
     actionButtons: { flexDirection: 'row', gap: 12, paddingHorizontal: 20, paddingTop: 20 },
     actionBtn: {

@@ -11,6 +11,7 @@ import {
   Plus, Coffee, Car, Film, Heart, ShoppingBag,
   Home as HomeIcon, Book, Package, X, ChevronDown, Check
 } from 'lucide-react-native';
+import { useTranslation } from 'react-i18next';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFocusEffect } from '@react-navigation/native';
 import { MotiView } from 'moti';
@@ -88,6 +89,7 @@ export default function HomeScreen() {
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  const { t } = useTranslation();
   const isDark = colorScheme === 'dark';
   const bgColor = isDark ? '#121212' : '#F9FAFB';
   const cardBg = isDark ? '#1E1E1E' : '#FFFFFF';
@@ -149,11 +151,11 @@ export default function HomeScreen() {
 
   const handleQuickSave = async () => {
     if (!quickAmount || isNaN(Number(quickAmount))) {
-      Alert.alert('Error', 'Please enter a valid amount.');
+      Alert.alert(t('common.error'), t('errors.invalidAmount'));
       return;
     }
     if (!quickDescription.trim()) {
-      Alert.alert('Error', 'Please enter a description.');
+      Alert.alert(t('common.error'), t('errors.needDescription'));
       return;
     }
     setIsSaving(true);
@@ -171,7 +173,7 @@ export default function HomeScreen() {
       setShowQuickAdd(false);
       fetchDashboardData();
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save expense.');
+      Alert.alert(t('common.error'), err.message || 'Failed to save expense.');
     } finally {
       setIsSaving(false);
     }
@@ -192,9 +194,17 @@ export default function HomeScreen() {
   for (let i = 0; i < numberOfBars; i++) {
     const barRatio = Math.min(Math.max(totalRatio - i, 0), 1);
     if (i === 0) {
-      overflowBars.push({ ratio: barRatio, label: isOverBudget ? '100% of current week spent' : `${Math.round(totalRatio * 100)}% of your weekly budget used` });
+      overflowBars.push({ 
+        ratio: barRatio, 
+        label: isOverBudget 
+          ? t('home.overBudgetBar') 
+          : t('home.budgetUsedBar', { percent: Math.round(totalRatio * 100) }) 
+      });
     } else {
-      overflowBars.push({ ratio: barRatio, label: `${Math.round((totalRatio - i) * 100)}% of week ${i + 1} budget spent` });
+      overflowBars.push({ 
+        ratio: barRatio, 
+        label: t('home.overflowBar', { percent: Math.round((totalRatio - i) * 100), week: i + 1 }) 
+      });
     }
   }
 
@@ -216,7 +226,9 @@ export default function HomeScreen() {
           style={styles.header}
         >
           <View style={{ flexShrink: 1 }}>
-            <Text style={[styles.greeting, { color: textColor }]} numberOfLines={1}>Hello, {firstName}</Text>
+            <Text style={[styles.greeting, { color: textColor }]} numberOfLines={1}>
+              {t('home.greeting', { name: firstName })}
+            </Text>
             <Text style={[styles.date, { color: secondaryText }]}>{dateString}</Text>
           </View>
           <AnimatedPressable
@@ -234,7 +246,7 @@ export default function HomeScreen() {
           transition={{ type: 'timing', duration: 500, delay: 100 }}
         >
           <View style={[styles.card, { backgroundColor: cardBg }]}>
-            <Text style={[styles.cardTitle, { color: secondaryText }]}>Weekly Budget</Text>
+            <Text style={[styles.cardTitle, { color: secondaryText }]}>{t('home.weeklyBudget')}</Text>
             <View style={styles.budgetRow}>
               <Text
                 style={[styles.budgetAmount, { color: isOverBudget ? '#EF4444' : textColor }]}
@@ -318,7 +330,7 @@ export default function HomeScreen() {
           style={styles.metricsRow}
         >
           <View style={[styles.metricCard, { backgroundColor: cardBg }]}>
-            <Text style={[styles.metricLabel, { color: secondaryText }]}>Today's Spent</Text>
+            <Text style={[styles.metricLabel, { color: secondaryText }]}>{t('home.todaySpent')}</Text>
             <Text style={[styles.metricValue, { color: textColor }]}>{formatCurrency(todaySpent)}</Text>
           </View>
         </MotiView>
@@ -326,9 +338,9 @@ export default function HomeScreen() {
         {/* ─── Recent Expenses (staggered) ─── */}
         <View style={styles.recentSection}>
           <View style={styles.recentHeader}>
-            <Text style={[styles.sectionTitle, { color: textColor }]}>Recent Expenses</Text>
+            <Text style={[styles.sectionTitle, { color: textColor }]}>{t('home.recentExpenses')}</Text>
             <AnimatedPressable onPress={() => router.push('/(tabs)/expenses')}>
-              <Text style={{ color: primaryColor, fontWeight: '600' }}>See All</Text>
+              <Text style={{ color: primaryColor, fontWeight: '600' }}>{t('home.seeAll')}</Text>
             </AnimatedPressable>
           </View>
 
@@ -341,7 +353,7 @@ export default function HomeScreen() {
               transition={{ type: 'timing', duration: 400 }}
             >
               <View style={[styles.emptyState, { backgroundColor: cardBg }]}>
-                <Text style={[styles.emptyText, { color: secondaryText }]}>No expenses yet. Add one!</Text>
+                <Text style={[styles.emptyText, { color: secondaryText }]}>{t('home.emptyExpenses')}</Text>
               </View>
             </MotiView>
           ) : (
@@ -405,17 +417,17 @@ export default function HomeScreen() {
             <Pressable style={[styles.modalCard, { backgroundColor: modalBg }]} onPress={() => {}}>
               {/* Header */}
               <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: textColor }]}>Quick Expense</Text>
+                <Text style={[styles.modalTitle, { color: textColor }]}>{t('home.quickExpense')}</Text>
                 <AnimatedPressable onPress={closeQuickAdd} hitSlop={12}>
                   <X color={secondaryText} size={22} />
                 </AnimatedPressable>
               </View>
               <Text style={[styles.modalSubtitle, { color: secondaryText }]}>
-                Log a new expense in seconds
+                {t('home.quickExpenseSubtitle')}
               </Text>
 
               {/* Amount */}
-              <Text style={[styles.fieldLabel, { color: secondaryText }]}>Amount</Text>
+              <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.amount')}</Text>
               <View style={[styles.modalInput, { backgroundColor: inputBgColor, borderColor }]}>
                 <Text style={[styles.currencyPrefix, { color: secondaryText }]}>
                   {CURRENCY_SYMBOLS[profile?.currency || 'USD'] || '$'}
@@ -435,11 +447,11 @@ export default function HomeScreen() {
               </View>
 
               {/* Description */}
-              <Text style={[styles.fieldLabel, { color: secondaryText }]}>Description</Text>
+              <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.description')}</Text>
               <View style={[styles.modalInput, { backgroundColor: inputBgColor, borderColor }]}>
                 <TextInput
                   style={[styles.modalTextInput, { color: textColor }]}
-                  placeholder="e.g. Coffee at Starbucks"
+                  placeholder={t('home.description')}
                   placeholderTextColor={secondaryText}
                   value={quickDescription}
                   onChangeText={setQuickDescription}
@@ -447,7 +459,7 @@ export default function HomeScreen() {
               </View>
 
               {/* Category Dropdown */}
-              <Text style={[styles.fieldLabel, { color: secondaryText }]}>Category</Text>
+              <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.category')}</Text>
               <Pressable
                 style={[styles.modalInput, styles.categoryDropdown, { backgroundColor: inputBgColor, borderColor }]}
                 onPress={() => setShowCategoryPicker(!showCategoryPicker)}
@@ -500,7 +512,7 @@ export default function HomeScreen() {
                 {isSaving ? (
                   <ActivityIndicator color="#FFF" />
                 ) : (
-                  <Text style={styles.modalSaveText}>Save Expense</Text>
+                  <Text style={styles.modalSaveText}>{t('home.saveExpense')}</Text>
                 )}
               </AnimatedPressable>
             </Pressable>

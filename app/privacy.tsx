@@ -1,8 +1,8 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useRouter } from 'expo-router';
 import { ArrowLeft, Shield } from 'lucide-react-native';
+import React from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function PrivacyScreen() {
     const router = useRouter();
@@ -38,8 +38,8 @@ export default function PrivacyScreen() {
             body: `You have the right to:\n\n• Access all data associated with your account (visible within the app).\n• Update or correct your personal information via the Profile screen.\n• Request deletion of your account and all associated data by contacting us.\n• Export your expense data at any time.`,
         },
         {
-            title: '6. Third-Party Services',
-            body: `SpendWise uses the following third-party services:\n\n• Supabase — for authentication, database, and storage.\n• Google Sign-In (optional) — for OAuth-based login.\n\nThese services have their own privacy policies, which we encourage you to review.`,
+            title: '6. Third-Party Services & AI',
+            body: `SpendWise uses the following third-party services:\n\n• Supabase — for authentication, database, and storage.\n• Google Sign-In (optional) — for OAuth-based login.\n• Groq API (Llama 3) — for automated expense categorization and financial insights.\n\nArtificial Intelligence and Data Processing:\nTo provide enhanced features like automated financial insights, we may share anonymized, non-personally identifiable transaction data (such as expense amounts, dates, and category descriptions) with secure, third-party Artificial Intelligence (AI) service providers. These providers act strictly as data processors and do not use your personal financial data to train their public models. We do not share your name, email, or direct identifying information with these AI services.`,
         },
         {
             title: '7. Changes to This Policy',
@@ -47,7 +47,7 @@ export default function PrivacyScreen() {
         },
         {
             title: '8. Contact',
-            body: `If you have questions about this Privacy Policy or your data, please reach out through the app's support channels.`,
+            body: `If you have questions about this Privacy Policy or your data, please reach out to us at:\n\n• Email: brianjosue1900@gmail.com\n• WhatsApp: +502 5363 8941`,
         },
     ];
 
