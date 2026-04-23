@@ -140,8 +140,9 @@ export default function OnboardingScreen() {
             style={[styles.container, { backgroundColor }]}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-            <ScrollView
-                style={{ flex: 1, width: '100%' }}
+            <View style={styles.innerWrapper}>
+                <ScrollView
+                    style={{ flex: 1, width: '100%' }}
                 contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPadding }]}
                 keyboardShouldPersistTaps="handled"
                 showsHorizontalScrollIndicator={false}
@@ -313,6 +314,7 @@ export default function OnboardingScreen() {
                     </TouchableOpacity>
                 )}
             </View>
+            </View>
         </KeyboardAvoidingView>
     );
 }
@@ -321,17 +323,23 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         width: '100%',
+    },
+    innerWrapper: {
+        flex: 1,
+        width: '100%',
         maxWidth: 600,
         alignSelf: 'center',
-        overflow: 'hidden' as const,
     },
     scrollContent: {
         flexGrow: 1,
         paddingVertical: 24,
+        paddingHorizontal: 24,
         justifyContent: 'center',
+        alignItems: 'center',
     },
     stepContainer: {
         alignItems: 'center',
+        width: '100%',
         gap: 16,
     },
     iconContainer: {
