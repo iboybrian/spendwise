@@ -11,6 +11,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Wallet, Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
+import { useTranslation } from 'react-i18next';
 
 export default function LoginScreen() {
     const [email, setEmail] = useState('');
@@ -25,6 +26,7 @@ export default function LoginScreen() {
     const isDark = colorScheme === 'dark';
     const router = useRouter();
     const { setSession, setProfile, setInitialized } = useStore();
+    const { t } = useTranslation();
 
     const fetchProfileAndRedirect = async (userId: string, session: any) => {
         try {
@@ -60,7 +62,7 @@ export default function LoginScreen() {
 
     const handleAuth = async () => {
         if (!email || !password) {
-            showAlert('Error', 'Please enter both email and password.');
+            showAlert(t('common.error'), t('auth.emailPasswordRequired'));
             return;
         }
 
@@ -79,12 +81,12 @@ export default function LoginScreen() {
             }
         } else {
             if (!fullName) {
-                showAlert('Error', 'Please enter your full name.');
+                showAlert(t('common.error'), t('auth.fullNameRequired'));
                 setLoading(false);
                 return;
             }
             if (password !== confirmPassword) {
-                showAlert('Error', 'Passwords do not match. Please try again.');
+                showAlert(t('common.error'), t('auth.passwordsDoNotMatch'));
                 setLoading(false);
                 return;
             }
@@ -112,7 +114,7 @@ export default function LoginScreen() {
                 }
                 // Check for duplicate account (Supabase returns user with empty identities)
                 if (data?.user?.identities?.length === 0) {
-                    showAlert('Account already exists', 'An account with this email already exists. Please log in instead.');
+                    showAlert(t('auth.accountExistsTitle'), t('auth.accountExistsMsg'));
                     setLoading(false);
                     return;
                 }
@@ -122,8 +124,8 @@ export default function LoginScreen() {
                 } else {
                     // Email confirmation required — don't redirect or update store
                     showAlert(
-                        'Check your email!',
-                        'We sent a validation link to your inbox. Please verify your email to log in.'
+                        t('auth.checkEmailTitle'),
+                        t('auth.checkEmailMsg')
                     );
                 }
             } catch (e: any) {
@@ -188,7 +190,7 @@ export default function LoginScreen() {
                     </View>
                     <Text style={[styles.title, { color: textColor }]}>SpendWise</Text>
                     <Text style={[styles.subtitle, { color: secondaryTextColor }]}>
-                        {isLogin ? 'Welcome back! Log in to continue.' : 'Create your account and start tracking.'}
+                        {isLogin ? t('auth.welcomeLogin') : t('auth.welcomeSignup')}
                     </Text>
                 </View>
 
@@ -202,14 +204,14 @@ export default function LoginScreen() {
                     ) : (
                         <>
                             <Text style={styles.googleIcon}>G</Text>
-                            <Text style={[styles.googleButtonText, { color: textColor }]}>Continue with Google</Text>
+                            <Text style={[styles.googleButtonText, { color: textColor }]}>{t('auth.continueGoogle')}</Text>
                         </>
                     )}
                 </TouchableOpacity>
 
                 <View style={styles.dividerContainer}>
                     <View style={[styles.dividerLine, { backgroundColor: borderColor }]} />
-                    <Text style={[styles.dividerText, { color: secondaryTextColor }]}>or</Text>
+                    <Text style={[styles.dividerText, { color: secondaryTextColor }]}>{t('auth.or')}</Text>
                     <View style={[styles.dividerLine, { backgroundColor: borderColor }]} />
                 </View>
 
@@ -218,7 +220,7 @@ export default function LoginScreen() {
                         <View style={[styles.inputContainer, { backgroundColor: inputBgColor, borderColor }]}>
                             <TextInput
                                 style={[styles.input, { color: textColor }]}
-                                placeholder="Full Name"
+                                placeholder={t('auth.fullName')}
                                 placeholderTextColor={secondaryTextColor}
                                 value={fullName}
                                 onChangeText={setFullName}
@@ -230,7 +232,7 @@ export default function LoginScreen() {
                         <Mail color={secondaryTextColor} size={20} style={styles.inputIcon} />
                         <TextInput
                             style={[styles.input, { color: textColor }]}
-                            placeholder="Email address"
+                            placeholder={t('auth.email')}
                             placeholderTextColor={secondaryTextColor}
                             value={email}
                             onChangeText={setEmail}
@@ -243,7 +245,7 @@ export default function LoginScreen() {
                         <Lock color={secondaryTextColor} size={20} style={styles.inputIcon} />
                         <TextInput
                             style={[styles.input, { color: textColor, flex: 1 }]}
-                            placeholder="Password"
+                            placeholder={t('auth.password')}
                             placeholderTextColor={secondaryTextColor}
                             value={password}
                             onChangeText={setPassword}
@@ -259,7 +261,7 @@ export default function LoginScreen() {
                             <Lock color={secondaryTextColor} size={20} style={styles.inputIcon} />
                             <TextInput
                                 style={[styles.input, { color: textColor, flex: 1 }]}
-                                placeholder="Confirm Password"
+                                placeholder={t('auth.confirmPassword')}
                                 placeholderTextColor={secondaryTextColor}
                                 value={confirmPassword}
                                 onChangeText={setConfirmPassword}
@@ -273,19 +275,19 @@ export default function LoginScreen() {
                         onPress={handleAuth}
                         disabled={loading}
                     >
-                        {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>{isLogin ? 'Log In' : 'Create Account'}</Text>}
+                        {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>{isLogin ? t('auth.logIn') : t('auth.createAccount')}</Text>}
                     </TouchableOpacity>
 
                     {isLogin && (
                         <TouchableOpacity style={styles.forgotButton} onPress={() => router.push('/(auth)/forgot-password')}>
-                            <Text style={[styles.forgotButtonText, { color: primaryColor }]}>Forgot Password?</Text>
+                            <Text style={[styles.forgotButtonText, { color: primaryColor }]}>{t('auth.forgotPassword')}</Text>
                         </TouchableOpacity>
                     )}
 
                     <TouchableOpacity style={styles.switchButton} onPress={() => setIsLogin(!isLogin)}>
                         <Text style={[styles.switchButtonText, { color: secondaryTextColor }]}>
-                            {isLogin ? "Don't have an account? " : 'Already have an account? '}
-                            <Text style={{ color: primaryColor, fontWeight: '700' }}>{isLogin ? 'Sign up' : 'Log in'}</Text>
+                            {isLogin ? `${t('auth.noAccount')} ` : `${t('auth.haveAccount')} `}
+                            <Text style={{ color: primaryColor, fontWeight: '700' }}>{isLogin ? t('auth.signUp') : t('auth.logIn')}</Text>
                         </Text>
                     </TouchableOpacity>
                 </View>
