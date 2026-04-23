@@ -2,9 +2,10 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   ActivityIndicator, Modal, TextInput, Alert, Pressable,
-  KeyboardAvoidingView, Platform
+  KeyboardAvoidingView, Platform, TouchableOpacity
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
 import {
@@ -82,12 +83,100 @@ export default function HomeScreen() {
   const [categoryBreakdown, setCategoryBreakdown] = useState<Record<string, number>>({});
 
   // Quick-add modal state
-  const [showQuickAdd, setShowQuickAdd] = useState(true);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [quickAmount, setQuickAmount] = useState('');
   const [quickDescription, setQuickDescription] = useState('');
   const [quickCategory, setQuickCategory] = useState('Other');
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Custom categories state
+  const [customCategories, setCustomCategories] = useState<string[]>([]);
+  const [customCatInput, setCustomCatInput] = useState('');
+  const [showAddCustomCat, setShowAddCustomCat] = useState(false);
+
+  useEffect(() => {
+    const loadCats = async () => {
+      if (profile?.id) {
+        const saved = await AsyncStorage.getItem(`@custom_cats_${profile.id}`);
+        if (saved) setCustomCategories(JSON.parse(saved));
+      }
+    };
+    loadCats();
+  }, [profile?.id]);
+
+  const handleAddCustomCategory = async () => {
+    if (!customCatInput.trim()) return;
+    const newCats = [...customCategories, customCatInput.trim()];
+    setCustomCategories(newCats);
+    setCustomCatInput('');
+    setShowAddCustomCat(false);
+    if (profile?.id) {
+        await AsyncStorage.setItem(`@custom_cats_${profile.id}`, JSON.stringify(newCats));
+    }
+  };
+
+  const CategoryPickerContent = ({ value, onChange, show, setShow }: any) => {
+      const allCats = [...CATEGORIES, ...customCategories];
+      return (
+      <>
+          <TouchableOpacity
+              style={[styles.modalInput, styles.categoryDropdown, { backgroundColor: inputBgColor, borderColor }]}
+              onPress={() => setShow(!show)}
+          >
+              <View style={styles.categoryDropdownRow}>
+                  {getCategoryIcon(value, primaryColor)}
+                  <Text style={[styles.categoryDropdownText, { color: textColor }]}>{t(`categories.${value.toLowerCase()}`, { defaultValue: value })}</Text>
+              </View>
+              <ChevronDown color={secondaryText} size={20} />
+          </TouchableOpacity>
+          {show && (
+              <View style={[styles.pickerList, { backgroundColor: inputBgColor, borderColor, zIndex: 9999 }]}>
+                  <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
+                      {allCats.map(cat => (
+                          <TouchableOpacity
+                              key={cat}
+                              style={[styles.pickerItem, value === cat && { backgroundColor: isDark ? '#2D2D44' : '#E0E7FF' }]}
+                              onPress={() => { onChange(cat); setShow(false); setShowAddCustomCat(false); }}
+                          >
+                              <View style={styles.categoryDropdownRow}>
+                                  {getCategoryIcon(cat, value === cat ? primaryColor : secondaryText)}
+                                  <Text style={[styles.pickerItemText, { color: value === cat ? primaryColor : textColor }]}>{t(`categories.${cat.toLowerCase()}`, { defaultValue: cat })}</Text>
+                              </View>
+                              {value === cat && <Check color={primaryColor} size={16} />}
+                          </TouchableOpacity>
+                      ))}
+                      {!showAddCustomCat ? (
+                          <TouchableOpacity
+                              style={[styles.pickerItem, { marginTop: 8, borderTopWidth: 1, borderTopColor: borderColor }]}
+                              onPress={() => setShowAddCustomCat(true)}
+                          >
+                              <View style={styles.categoryDropdownRow}>
+                                  <Plus color={primaryColor} size={20} />
+                                  <Text style={[styles.pickerItemText, { color: primaryColor }]}>{t('common.addCustom', { defaultValue: 'Agregar Personalizado'})}</Text>
+                              </View>
+                          </TouchableOpacity>
+                      ) : (
+                          <View style={[styles.pickerItem, { flexDirection: 'column', alignItems: 'stretch', marginTop: 8, borderTopWidth: 1, borderTopColor: borderColor }]}>
+                              <TextInput
+                                  style={{ color: textColor, height: 40, borderWidth: 1, borderColor, borderRadius: 8, paddingHorizontal: 8, marginBottom: 8 }}
+                                  placeholder={t('common.newCategory', { defaultValue: 'Nueva Categoría' })}
+                                  placeholderTextColor={secondaryText}
+                                  value={customCatInput}
+                                  onChangeText={setCustomCatInput}
+                                  autoFocus
+                              />
+                              <TouchableOpacity style={{ backgroundColor: primaryColor, borderRadius: 8, padding: 8, alignItems: 'center' }} onPress={handleAddCustomCategory}>
+                                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('common.save')}</Text>
+                              </TouchableOpacity>
+                          </View>
+                      )}
+                  </ScrollView>
+              </View>
+          )}
+      </>
+      );
+  };
 
   const { t } = useTranslation();
   const isDark = colorScheme === 'dark';
@@ -451,7 +540,7 @@ export default function HomeScreen() {
               <View style={[styles.modalInput, { backgroundColor: inputBgColor, borderColor }]}>
                 <TextInput
                   style={[styles.modalTextInput, { color: textColor }]}
-                  placeholder={t('home.description')}
+                  placeholder="e.g. Coffee"
                   placeholderTextColor={secondaryText}
                   value={quickDescription}
                   onChangeText={setQuickDescription}
@@ -460,48 +549,7 @@ export default function HomeScreen() {
 
               {/* Category Dropdown */}
               <Text style={[styles.fieldLabel, { color: secondaryText }]}>{t('common.category')}</Text>
-              <Pressable
-                style={[styles.modalInput, styles.categoryDropdown, { backgroundColor: inputBgColor, borderColor }]}
-                onPress={() => setShowCategoryPicker(!showCategoryPicker)}
-              >
-                <View style={styles.categoryDropdownRow}>
-                  {getCategoryIcon(quickCategory, primaryColor)}
-                  <Text style={[styles.categoryDropdownText, { color: textColor }]}>{quickCategory}</Text>
-                </View>
-                <ChevronDown color={secondaryText} size={20} />
-              </Pressable>
-
-              {showCategoryPicker && (
-                <MotiView
-                  from={{ opacity: 0, translateY: -8 }}
-                  animate={{ opacity: 1, translateY: 0 }}
-                  transition={{ type: 'timing', duration: 200 }}
-                >
-                  <View style={[styles.pickerList, { backgroundColor: inputBgColor, borderColor }]}>
-                    <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled>
-                      {CATEGORIES.map(cat => (
-                        <Pressable
-                          key={cat}
-                          style={[
-                            styles.pickerItem,
-                            quickCategory === cat && { backgroundColor: isDark ? '#2D2D44' : '#E0E7FF' }
-                          ]}
-                          onPress={() => { setQuickCategory(cat); setShowCategoryPicker(false); }}
-                        >
-                          <View style={styles.categoryDropdownRow}>
-                            {getCategoryIcon(cat, quickCategory === cat ? primaryColor : secondaryText)}
-                            <Text style={[
-                              styles.pickerItemText,
-                              { color: quickCategory === cat ? primaryColor : textColor }
-                            ]}>{cat}</Text>
-                          </View>
-                          {quickCategory === cat && <Check color={primaryColor} size={18} />}
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  </View>
-                </MotiView>
-              )}
+              <CategoryPickerContent value={quickCategory} onChange={setQuickCategory} show={showCategoryPicker} setShow={setShowCategoryPicker} />
 
               {/* Save Button */}
               <AnimatedPressable

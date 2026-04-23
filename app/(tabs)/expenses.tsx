@@ -328,37 +328,56 @@ export default function ExpensesScreen() {
 
     // Deactivate recurring expense
     const deactivateRecurring = async (id: string, description: string) => {
-        Alert.alert(
-            t('expenses.removeRecurring'),
-            t('expenses.removeRecurringMsg', { description }),
-            [
-                { text: t('common.cancel'), style: 'cancel' },
-                {
-                    text: t('common.delete'), style: 'destructive',
-                    onPress: async () => {
-                        await supabase.from('recurring_expenses').update({ is_active: false }).eq('id', id);
-                        fetchData();
+        if (Platform.OS === 'web') {
+            const confirmed = window.confirm(`${t('expenses.removeRecurring')}\n${t('expenses.removeRecurringMsg', { description })}`);
+            if (confirmed) {
+                await supabase.from('recurring_expenses').update({ is_active: false }).eq('id', id);
+                fetchData();
+            }
+        } else {
+            Alert.alert(
+                t('expenses.removeRecurring'),
+                t('expenses.removeRecurringMsg', { description }),
+                [
+                    { text: t('common.cancel'), style: 'cancel' },
+                    {
+                        text: t('common.delete'), style: 'destructive',
+                        onPress: async () => {
+                            await supabase.from('recurring_expenses').update({ is_active: false }).eq('id', id);
+                            fetchData();
+                        }
                     }
-                }
-            ]
-        );
+                ]
+            );
+        }
     };
 
     // Delete a single expense
     const deleteExpense = async (id: string) => {
-        Alert.alert(t('expenses.deleteExpense'), t('expenses.deleteConfirm'), [
-            { text: t('common.cancel'), style: 'cancel' },
-            {
-                text: t('common.delete'), style: 'destructive',
-                onPress: async () => {
-                    await supabase.from('expenses').delete().eq('id', id);
-                    setShowActionSheet(false);
-                    setSelectedExpense(null);
-                    fetchData();
-                    fetchSummary(slicerRange);
-                }
+        if (Platform.OS === 'web') {
+            const confirmed = window.confirm(`${t('expenses.deleteExpense')}\n${t('expenses.deleteConfirm')}`);
+            if (confirmed) {
+                setShowActionSheet(false);
+                await supabase.from('expenses').delete().eq('id', id);
+                setSelectedExpense(null);
+                fetchData();
+                fetchSummary(slicerRange);
             }
-        ]);
+        } else {
+            Alert.alert(t('expenses.deleteExpense'), t('expenses.deleteConfirm'), [
+                { text: t('common.cancel'), style: 'cancel' },
+                {
+                    text: t('common.delete'), style: 'destructive',
+                    onPress: async () => {
+                        await supabase.from('expenses').delete().eq('id', id);
+                        setShowActionSheet(false);
+                        setSelectedExpense(null);
+                        fetchData();
+                        fetchSummary(slicerRange);
+                    }
+                }
+            ]);
+        }
     };
 
     // Open action sheet on long-press
@@ -844,7 +863,7 @@ export default function ExpensesScreen() {
             {/* ====== ACTION SHEET MODAL ====== */}
             <Modal visible={showActionSheet} transparent animationType="fade" onRequestClose={() => setShowActionSheet(false)}>
                 <Pressable style={styles.actionOverlay} onPress={() => setShowActionSheet(false)}>
-                    <View style={[styles.actionSheet, { backgroundColor: modalBg }]}>
+                    <Pressable style={[styles.actionSheet, { backgroundColor: modalBg }]}>
                         <Text style={[styles.actionTitle, { color: secondaryText }]}>
                             {selectedExpense?.description}
                         </Text>
@@ -862,7 +881,7 @@ export default function ExpensesScreen() {
                         >
                             <Text style={[styles.actionCancelText, { color: textColor }]}>{t('common.cancel')}</Text>
                         </TouchableOpacity>
-                    </View>
+                    </Pressable>
                 </Pressable>
             </Modal>
 
