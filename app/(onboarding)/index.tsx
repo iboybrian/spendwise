@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
     View, Text, TextInput, TouchableOpacity, StyleSheet,
-    KeyboardAvoidingView, Platform, Alert, ScrollView, FlatList
+    KeyboardAvoidingView, Platform, Alert, ScrollView, FlatList, useWindowDimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
@@ -30,6 +30,8 @@ export default function OnboardingScreen() {
     const [costDescription, setCostDescription] = useState('');
     const [costAmount, setCostAmount] = useState('');
 
+    const { width: windowWidth } = useWindowDimensions();
+
     const isDark = colorScheme === 'dark';
     const backgroundColor = isDark ? '#121212' : '#FFFFFF';
     const textColor = isDark ? '#FFFFFF' : '#121212';
@@ -38,6 +40,9 @@ export default function OnboardingScreen() {
     const borderColor = isDark ? '#333333' : '#E0E0E0';
     const primaryColor = '#4F46E5';
     const cardBg = isDark ? '#1A1A2E' : '#F9FAFB';
+
+    // Responsive horizontal padding — tighter on small screens to avoid overflow
+    const horizontalPadding = windowWidth < 380 ? 16 : 24;
 
     const TOTAL_STEPS = 4;
 
@@ -135,7 +140,12 @@ export default function OnboardingScreen() {
             style={[styles.container, { backgroundColor }]}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-            <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+            <ScrollView
+                style={{ flex: 1, width: '100%' }}
+                contentContainerStyle={[styles.scrollContent, { paddingHorizontal: horizontalPadding }]}
+                keyboardShouldPersistTaps="handled"
+                showsHorizontalScrollIndicator={false}
+            >
 
                 {step === 1 && (
                     <View style={styles.stepContainer}>
@@ -262,7 +272,7 @@ export default function OnboardingScreen() {
 
             </ScrollView>
 
-            <View style={styles.footer}>
+            <View style={[styles.footer, { paddingHorizontal: horizontalPadding }]}>
                 <View style={styles.progressContainer}>
                     {[1, 2, 3, 4].map((val) => (
                         <View
@@ -310,10 +320,14 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        width: '100%',
+        maxWidth: 600,
+        alignSelf: 'center',
+        overflow: 'hidden' as const,
     },
     scrollContent: {
         flexGrow: 1,
-        padding: 24,
+        paddingVertical: 24,
         justifyContent: 'center',
     },
     stepContainer: {
@@ -431,7 +445,7 @@ const styles = StyleSheet.create({
         padding: 6,
     },
     footer: {
-        padding: 24,
+        paddingVertical: 24,
         gap: 24,
         paddingBottom: Platform.OS === 'ios' ? 40 : 24,
     },

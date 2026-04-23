@@ -15,6 +15,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { PieChart } from 'react-native-gifted-charts';
 import DropDownPicker from 'react-native-dropdown-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CATEGORIES = ['Food', 'Transport', 'Entertainment', 'Health', 'Shopping', 'Home', 'Education', 'Other'];
 
@@ -60,6 +61,19 @@ export default function ExpensesScreen() {
 
     // DropDown states
     const [periodOpen, setPeriodOpen] = useState(false);
+    const [customCategories, setCustomCategories] = useState<string[]>([]);
+    const [customCatInput, setCustomCatInput] = useState('');
+    const [showAddCustomCat, setShowAddCustomCat] = useState(false);
+
+    useEffect(() => {
+        const loadCats = async () => {
+            if (profile?.id) {
+                const saved = await AsyncStorage.getItem(`@custom_cats_${profile.id}`);
+                if (saved) setCustomCategories(JSON.parse(saved));
+            }
+        };
+        loadCats();
+    }, [profile?.id]);
     const [periodItems, setPeriodItems] = useState([
         { label: t('periods.thisWeek'), value: 'This Week' },
         { label: t('periods.monthToDate'), value: 'Month to Date' },
@@ -124,9 +138,9 @@ export default function ExpensesScreen() {
         ]);
         setCategoryItems([
             { label: t('categories.all'), value: 'All' },
-            ...CATEGORIES.map(c => ({ label: t(`categories.${c.toLowerCase()}`), value: c }))
+            ...[...CATEGORIES, ...customCategories].map(c => ({ label: t(`categories.${c.toLowerCase()}`, { defaultValue: c }), value: c }))
         ]);
-    }, [t]);
+    }, [t, customCategories]);
 
     useEffect(() => {
         fetchData();
@@ -414,7 +428,20 @@ export default function ExpensesScreen() {
     const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
 
     // Reusable category picker modal content
-    const CategoryPickerContent = ({ value, onChange, show, setShow }: any) => (
+    const handleAddCustomCategory = async () => {
+        if (!customCatInput.trim()) return;
+        const newCats = [...customCategories, customCatInput.trim()];
+        setCustomCategories(newCats);
+        setCustomCatInput('');
+        setShowAddCustomCat(false);
+        if (profile?.id) {
+            await AsyncStorage.setItem(`@custom_cats_${profile.id}`, JSON.stringify(newCats));
+        }
+    };
+
+    const CategoryPickerContent = ({ value, onChange, show, setShow }: any) => {
+        const allCats = [...CATEGORIES, ...customCategories];
+        return (
         <>
             <TouchableOpacity
                 style={[styles.dropdownBtn, { backgroundColor: inputBg, borderColor }]}
@@ -427,13 +454,13 @@ export default function ExpensesScreen() {
                 <ChevronDown color={secondaryText} size={20} />
             </TouchableOpacity>
             {show && (
-                <View style={[styles.pickerList, { backgroundColor: inputBg, borderColor }]}>
-                    <ScrollView style={{ maxHeight: 180 }} nestedScrollEnabled>
-                        {CATEGORIES.map(cat => (
+                <View style={[styles.pickerList, { backgroundColor: inputBg, borderColor, zIndex: 9999 }]}>
+                    <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
+                        {allCats.map(cat => (
                             <TouchableOpacity
                                 key={cat}
                                 style={[styles.pickerItem, value === cat && { backgroundColor: isDark ? '#2D2D44' : '#E0E7FF' }]}
-                                onPress={() => { onChange(cat); setShow(false); }}
+                                onPress={() => { onChange(cat); setShow(false); setShowAddCustomCat(false); }}
                             >
                                 <View style={styles.dropdownRow}>
                                     {getCategoryIcon(cat, value === cat ? primaryColor : secondaryText)}
@@ -442,11 +469,37 @@ export default function ExpensesScreen() {
                                 {value === cat && <Check color={primaryColor} size={16} />}
                             </TouchableOpacity>
                         ))}
+                        {!showAddCustomCat ? (
+                            <TouchableOpacity
+                                style={[styles.pickerItem, { marginTop: 8, borderTopWidth: 1, borderTopColor: borderColor }]}
+                                onPress={() => setShowAddCustomCat(true)}
+                            >
+                                <View style={styles.dropdownRow}>
+                                    <Plus color={primaryColor} size={20} />
+                                    <Text style={[styles.pickerItemText, { color: primaryColor }]}>Agregar Personalizado</Text>
+                                </View>
+                            </TouchableOpacity>
+                        ) : (
+                            <View style={[styles.pickerItem, { flexDirection: 'column', alignItems: 'stretch', marginTop: 8, borderTopWidth: 1, borderTopColor: borderColor }]}>
+                                <TextInput
+                                    style={{ color: textColor, height: 40, borderWidth: 1, borderColor, borderRadius: 8, paddingHorizontal: 8, marginBottom: 8 }}
+                                    placeholder="Nueva Categoría"
+                                    placeholderTextColor={secondaryText}
+                                    value={customCatInput}
+                                    onChangeText={setCustomCatInput}
+                                    autoFocus
+                                />
+                                <TouchableOpacity style={{ backgroundColor: primaryColor, borderRadius: 8, padding: 8, alignItems: 'center' }} onPress={handleAddCustomCategory}>
+                                    <Text style={{ color: '#fff', fontWeight: 'bold' }}>Guardar</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
                     </ScrollView>
                 </View>
             )}
         </>
-    );
+        );
+    };
 
     return (
         <View style={[styles.container, { backgroundColor: bgColor }]}>
@@ -507,6 +560,7 @@ export default function ExpensesScreen() {
                                         donut
                                         innerRadius={55}
                                         radius={75}
+                                        innerCircleColor={cardBg}
                                         data={summaryData.map(item => ({
                                             value: Number(item.total) || 0,
                                             color: CATEGORY_COLORS[item.category] || '#6B7280',
