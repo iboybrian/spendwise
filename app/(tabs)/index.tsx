@@ -34,6 +34,12 @@ const CATEGORY_COLORS: Record<string, string> = {
   Education: '#6366F1', Other: '#6B7280',
 };
 
+const COLOR_PRESETS = [
+  '#F97316', '#3B82F6', '#A855F7', '#EF4444', '#EC4899',
+  '#14B8A6', '#6366F1', '#F59E0B', '#10B981', '#8B5CF6',
+  '#06B6D4', '#E11D48', '#84CC16', '#F43F5E', '#0EA5E9',
+];
+
 const getCategoryIcon = (category: string, color: string) => {
   switch (category) {
     case 'Food': return <Coffee color={color} size={24} />;
@@ -94,12 +100,16 @@ export default function HomeScreen() {
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [customCatInput, setCustomCatInput] = useState('');
   const [showAddCustomCat, setShowAddCustomCat] = useState(false);
+  const [customCategoryColors, setCustomCategoryColors] = useState<Record<string, string>>({});
+  const [selectedCustomColor, setSelectedCustomColor] = useState(COLOR_PRESETS[0]);
 
   useEffect(() => {
     const loadCats = async () => {
       if (profile?.id) {
         const saved = await AsyncStorage.getItem(`@custom_cats_${profile.id}`);
         if (saved) setCustomCategories(JSON.parse(saved));
+        const savedColors = await AsyncStorage.getItem(`@custom_cat_colors_${profile.id}`);
+        if (savedColors) setCustomCategoryColors(JSON.parse(savedColors));
       }
     };
     loadCats();
@@ -109,12 +119,18 @@ export default function HomeScreen() {
     if (!customCatInput.trim()) return;
     const newCats = [...customCategories, customCatInput.trim()];
     setCustomCategories(newCats);
+    const newColors = { ...customCategoryColors, [customCatInput.trim()]: selectedCustomColor };
+    setCustomCategoryColors(newColors);
     setCustomCatInput('');
     setShowAddCustomCat(false);
+    setSelectedCustomColor(COLOR_PRESETS[0]);
     if (profile?.id) {
         await AsyncStorage.setItem(`@custom_cats_${profile.id}`, JSON.stringify(newCats));
+        await AsyncStorage.setItem(`@custom_cat_colors_${profile.id}`, JSON.stringify(newColors));
     }
   };
+
+  const getCatColor = (cat: string) => CATEGORY_COLORS[cat] || customCategoryColors[cat] || '#6B7280';
 
   const CategoryPickerContent = ({ value, onChange, show, setShow }: any) => {
       const allCats = [...CATEGORIES, ...customCategories];
@@ -166,6 +182,25 @@ export default function HomeScreen() {
                                   onChangeText={setCustomCatInput}
                                   autoFocus
                               />
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                                  {COLOR_PRESETS.map(color => (
+                                      <TouchableOpacity
+                                          key={color}
+                                          onPress={() => setSelectedCustomColor(color)}
+                                          style={{
+                                              width: 28, height: 28, borderRadius: 14,
+                                              backgroundColor: color,
+                                              borderWidth: selectedCustomColor === color ? 3 : 0,
+                                              borderColor: '#FFF',
+                                              shadowColor: selectedCustomColor === color ? color : 'transparent',
+                                              shadowOffset: { width: 0, height: 0 },
+                                              shadowOpacity: 0.6,
+                                              shadowRadius: 4,
+                                              elevation: selectedCustomColor === color ? 4 : 0,
+                                          }}
+                                      />
+                                  ))}
+                              </View>
                               <TouchableOpacity style={{ backgroundColor: primaryColor, borderRadius: 8, padding: 8, alignItems: 'center' }} onPress={handleAddCustomCategory}>
                                   <Text style={{ color: '#fff', fontWeight: 'bold' }}>{t('common.save')}</Text>
                               </TouchableOpacity>
@@ -381,7 +416,7 @@ export default function HomeScreen() {
                         from={{ width: '0%' as any }}
                         animate={{ width: `${seg.width}%` as any }}
                         transition={{ type: 'timing', duration: 800, delay: 300 + barIndex * 200 }}
-                        style={[styles.progressSegment, { backgroundColor: CATEGORY_COLORS[seg.cat] || '#6B7280' }]}
+                        style={[styles.progressSegment, { backgroundColor: getCatColor(seg.cat) }]}
                       />
                     ))}
                   </View>
@@ -400,7 +435,7 @@ export default function HomeScreen() {
               <View style={styles.legendContainer}>
                 {Object.entries(categoryBreakdown).map(([cat, amount]) => (
                   <View key={cat} style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: CATEGORY_COLORS[cat] || '#6B7280' }]} />
+                    <View style={[styles.legendDot, { backgroundColor: getCatColor(cat) }]} />
                     <Text style={[styles.legendText, { color: secondaryText }]}>
                       {cat} {formatCurrency(amount)}
                     </Text>

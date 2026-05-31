@@ -5,8 +5,15 @@ import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Coffee, Car, Film, Heart, ShoppingBag, Home, Book, Package, ChevronDown, Check, ArrowLeft } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CATEGORIES = ['Food', 'Transport', 'Entertainment', 'Health', 'Shopping', 'Home', 'Education', 'Other'];
+
+const CATEGORY_COLORS: Record<string, string> = {
+    Food: '#F97316', Transport: '#3B82F6', Entertainment: '#A855F7',
+    Health: '#EF4444', Shopping: '#EC4899', Home: '#14B8A6',
+    Education: '#6366F1', Other: '#6B7280',
+};
 
 const getCategoryIcon = (category: string, color: string) => {
     switch (category) {
@@ -37,6 +44,23 @@ export default function AddExpenseScreen() {
     const [showCategoryPicker, setShowCategoryPicker] = useState(false);
 
     const typingTimer = useRef<NodeJS.Timeout | null>(null);
+
+    const [customCategories, setCustomCategories] = useState<string[]>([]);
+    const [customCategoryColors, setCustomCategoryColors] = useState<Record<string, string>>({});
+
+    useEffect(() => {
+        const loadCats = async () => {
+            if (profile?.id) {
+                const saved = await AsyncStorage.getItem(`@custom_cats_${profile.id}`);
+                if (saved) setCustomCategories(JSON.parse(saved));
+                const savedColors = await AsyncStorage.getItem(`@custom_cat_colors_${profile.id}`);
+                if (savedColors) setCustomCategoryColors(JSON.parse(savedColors));
+            }
+        };
+        loadCats();
+    }, [profile?.id]);
+
+    const getCatColor = (cat: string) => CATEGORY_COLORS[cat] || customCategoryColors[cat] || '#6B7280';
 
     const isDark = colorScheme === 'dark';
     const bgColor = isDark ? '#121212' : '#F9FAFB';
@@ -171,7 +195,7 @@ export default function AddExpenseScreen() {
                         >
                             <View style={styles.categoryRow}>
                                 <View style={[styles.iconBox, { backgroundColor: isDark ? '#333' : '#F3F4F6' }]}>
-                                    {getCategoryIcon(category, primaryColor)}
+                                    {getCategoryIcon(category, getCatColor(category))}
                                 </View>
                                 <Text style={[styles.categoryText, { color: textColor }]}>{category}</Text>
                             </View>
@@ -185,7 +209,7 @@ export default function AddExpenseScreen() {
 
                         {showCategoryPicker && (
                             <View style={[styles.categoryPicker, { backgroundColor: inputBgColor }]}>
-                                {CATEGORIES.map(cat => (
+                                {[...CATEGORIES, ...customCategories].map(cat => (
                                     <TouchableOpacity
                                         key={cat}
                                         style={styles.categoryOption}
@@ -195,7 +219,7 @@ export default function AddExpenseScreen() {
                                         }}
                                     >
                                         <View style={styles.categoryRow}>
-                                            {getCategoryIcon(cat, textColor)}
+                                            {getCategoryIcon(cat, getCatColor(cat))}
                                             <Text style={[styles.optionText, { color: textColor }]}>{cat}</Text>
                                         </View>
                                         {category === cat && <Check color={primaryColor} size={20} />}

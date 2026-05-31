@@ -25,6 +25,12 @@ const CATEGORY_COLORS: Record<string, string> = {
     Education: '#6366F1', Other: '#6B7280',
 };
 
+const COLOR_PRESETS = [
+  '#F97316', '#3B82F6', '#A855F7', '#EF4444', '#EC4899',
+  '#14B8A6', '#6366F1', '#F59E0B', '#10B981', '#8B5CF6',
+  '#06B6D4', '#E11D48', '#84CC16', '#F43F5E', '#0EA5E9',
+];
+
 const CURRENCY_SYMBOLS: Record<string, string> = {
     USD: '$', GTQ: 'Q', CAD: 'CA$', BRL: 'R$', HNL: 'L',
     CRC: '₡', MXN: 'MX$', COP: 'COL$', PEN: 'S/', ARS: 'AR$', EUR: '€',
@@ -64,12 +70,16 @@ export default function ExpensesScreen() {
     const [customCategories, setCustomCategories] = useState<string[]>([]);
     const [customCatInput, setCustomCatInput] = useState('');
     const [showAddCustomCat, setShowAddCustomCat] = useState(false);
+    const [customCategoryColors, setCustomCategoryColors] = useState<Record<string, string>>({});
+    const [selectedCustomColor, setSelectedCustomColor] = useState(COLOR_PRESETS[0]);
 
     useEffect(() => {
         const loadCats = async () => {
             if (profile?.id) {
                 const saved = await AsyncStorage.getItem(`@custom_cats_${profile.id}`);
                 if (saved) setCustomCategories(JSON.parse(saved));
+                const savedColors = await AsyncStorage.getItem(`@custom_cat_colors_${profile.id}`);
+                if (savedColors) setCustomCategoryColors(JSON.parse(savedColors));
             }
         };
         loadCats();
@@ -447,14 +457,20 @@ export default function ExpensesScreen() {
     const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
 
     // Reusable category picker modal content
+    const getCatColor = (cat: string) => CATEGORY_COLORS[cat] || customCategoryColors[cat] || '#6B7280';
+
     const handleAddCustomCategory = async () => {
         if (!customCatInput.trim()) return;
         const newCats = [...customCategories, customCatInput.trim()];
         setCustomCategories(newCats);
+        const newColors = { ...customCategoryColors, [customCatInput.trim()]: selectedCustomColor };
+        setCustomCategoryColors(newColors);
         setCustomCatInput('');
         setShowAddCustomCat(false);
+        setSelectedCustomColor(COLOR_PRESETS[0]);
         if (profile?.id) {
             await AsyncStorage.setItem(`@custom_cats_${profile.id}`, JSON.stringify(newCats));
+            await AsyncStorage.setItem(`@custom_cat_colors_${profile.id}`, JSON.stringify(newColors));
         }
     };
 
@@ -508,6 +524,25 @@ export default function ExpensesScreen() {
                                     onChangeText={setCustomCatInput}
                                     autoFocus
                                 />
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+                                    {COLOR_PRESETS.map(color => (
+                                        <TouchableOpacity
+                                            key={color}
+                                            onPress={() => setSelectedCustomColor(color)}
+                                            style={{
+                                                width: 28, height: 28, borderRadius: 14,
+                                                backgroundColor: color,
+                                                borderWidth: selectedCustomColor === color ? 3 : 0,
+                                                borderColor: '#FFF',
+                                                shadowColor: selectedCustomColor === color ? color : 'transparent',
+                                                shadowOffset: { width: 0, height: 0 },
+                                                shadowOpacity: 0.6,
+                                                shadowRadius: 4,
+                                                elevation: selectedCustomColor === color ? 4 : 0,
+                                            }}
+                                        />
+                                    ))}
+                                </View>
                                 <TouchableOpacity style={{ backgroundColor: primaryColor, borderRadius: 8, padding: 8, alignItems: 'center' }} onPress={handleAddCustomCategory}>
                                     <Text style={{ color: '#fff', fontWeight: 'bold' }}>Guardar</Text>
                                 </TouchableOpacity>
@@ -582,7 +617,7 @@ export default function ExpensesScreen() {
                                         innerCircleColor={cardBg}
                                         data={summaryData.map(item => ({
                                             value: Number(item.total) || 0,
-                                            color: CATEGORY_COLORS[item.category] || '#6B7280',
+                                            color: getCatColor(item.category),
                                         }))}
                                         centerLabelComponent={() => {
                                             const total = summaryData.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
@@ -605,7 +640,7 @@ export default function ExpensesScreen() {
                                             const perc = totalAll > 0 ? ((val / totalAll) * 100).toFixed(1) : '0';
                                             return (
                                                 <View key={idx} style={styles.legendItem}>
-                                                    <View style={[styles.legendColor, { backgroundColor: CATEGORY_COLORS[item.category] || '#6B7280' }]} />
+                                                    <View style={[styles.legendColor, { backgroundColor: getCatColor(item.category) }]} />
                                                     <View style={{ flex: 1 }}>
                                                         <Text style={{ color: textColor, fontSize: 13, fontWeight: '500' }}>
                                                             {t(`categories.${item.category.toLowerCase()}`, { defaultValue: item.category })}
@@ -658,7 +693,7 @@ export default function ExpensesScreen() {
                                         styles.recurringRow,
                                         i < recurringExpenses.length - 1 && { borderBottomWidth: 1, borderBottomColor: borderColor }
                                     ]}>
-                                        <View style={[styles.catDot, { backgroundColor: CATEGORY_COLORS[rec.category] || '#6B7280' }]} />
+                                        <View style={[styles.catDot, { backgroundColor: getCatColor(rec.category) }]} />
                                         <View style={styles.recurringInfo}>
                                             <Text style={[styles.recurringName, { color: textColor }]}>{rec.description}</Text>
                                             <Text style={[styles.recurringDetail, { color: secondaryText }]}>
@@ -702,7 +737,7 @@ export default function ExpensesScreen() {
                                         onLongPress={() => handleExpenseLongPress(expense)}
                                     >
                                         <View style={[styles.iconBox, { backgroundColor: isDark ? '#333' : '#F3F4F6' }]}>
-                                            {getCategoryIcon(expense.category, CATEGORY_COLORS[expense.category] || primaryColor)}
+                                            {getCategoryIcon(expense.category, getCatColor(expense.category))}
                                         </View>
                                         <View style={styles.expenseInfo}>
                                             <Text style={[styles.expenseTitle, { color: textColor }]} numberOfLines={1}>

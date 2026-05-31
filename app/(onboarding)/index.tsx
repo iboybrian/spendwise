@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
     },
     stepContainer: {
         alignItems: 'center',
-        width: '100%',
+        alignSelf: 'stretch',
         gap: 16,
     },
     iconContainer: {
