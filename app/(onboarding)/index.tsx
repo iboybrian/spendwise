@@ -4,8 +4,8 @@ import {
     KeyboardAvoidingView, Platform, Alert, ScrollView, FlatList, useWindowDimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { supabase } from '@/lib/supabase';
 import { useStore } from '@/store/useStore';
+import { updateProfile, insertRecurringExpensesBatch } from '@/lib/data';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTranslation } from 'react-i18next';
 import { DollarSign, PieChart, ArrowRight, Check, Plus, Receipt, Trash2 } from 'lucide-react-native';
@@ -96,18 +96,15 @@ export default function OnboardingScreen() {
             const parsedIncome = parseFloat(income);
             const parsedBudget = parseFloat(budget);
 
-            const { data, error } = await supabase
-                .from('users')
-                .update({
-                    salary: parsedIncome,
-                    weekly_budget: parsedBudget,
-                    onboarding_completed: true,
-                })
-                .eq('id', profile?.id)
-                .select()
-                .single();
+            const updatedProfile = {
+                ...profile!,
+                salary: parsedIncome,
+                weekly_budget: parsedBudget,
+                onboarding_completed: true,
+            };
 
-            if (error) throw error;
+            await updateProfile(updatedProfile);
+            setProfile(updatedProfile);
 
             // Save monthly costs into recurring_expenses table
             if (monthlyCosts.length > 0 && profile?.id) {
@@ -118,10 +115,9 @@ export default function OnboardingScreen() {
                     category: 'Home',
                     is_active: true,
                 }));
-                await supabase.from('recurring_expenses').insert(costsToInsert);
+                await insertRecurringExpensesBatch(costsToInsert);
             }
 
-            setProfile(data);
             router.replace('/(tabs)');
 
         } catch (error: any) {

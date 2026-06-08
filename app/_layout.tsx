@@ -7,6 +7,10 @@ import * as Linking from 'expo-linking';
 import { supabase } from '@/lib/supabase';
 import { useStore } from '@/store/useStore';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { initDatabase, saveLocalProfile } from '@/lib/database';
+import { startConnectivityListener, stopConnectivityListener } from '@/lib/connectivity';
+import { syncPendingChanges } from '@/lib/sync';
+import { ConnectionBanner } from '@/components/connection-banner';
 import '@/lib/i18n';
 
 export default function RootLayout() {
@@ -23,7 +27,10 @@ export default function RootLayout() {
   const fetchProfile = useCallback(async (userId: string) => {
     try {
       const { data } = await supabase.from('users').select('*').eq('id', userId).single();
-      if (data) setProfile(data);
+      if (data) {
+        setProfile(data);
+        saveLocalProfile(data).catch(e => console.warn('Failed to cache profile locally', e));
+      }
     } catch (e) {
       console.log('Profile fetch error (may not exist yet):', e);
     }
@@ -31,6 +38,12 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
+    // Initialize local database
+    initDatabase().catch(e => console.warn('DB init error:', e));
+
+    // Start connectivity listener
+    startConnectivityListener();
+
     // Initial session load
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -54,8 +67,21 @@ export default function RootLayout() {
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      stopConnectivityListener();
+    };
   }, []);
+
+  // Sync pending changes when coming back online
+  useEffect(() => {
+    const unsub = useStore.subscribe((state, prev) => {
+      if (state.isOnline && !prev.isOnline) {
+        syncPendingChanges().catch(e => console.warn('Sync on reconnect error:', e))
+      }
+    })
+    return unsub
+  }, [])
 
   // Deep link handler for Supabase email confirmation & magic links
   useEffect(() => {
@@ -126,6 +152,7 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ConnectionBanner />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(onboarding)" />

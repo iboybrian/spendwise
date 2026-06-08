@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import { useStore } from '@/store/useStore';
+import { updateProfileField } from '@/lib/data';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTranslation } from 'react-i18next';
@@ -88,15 +89,7 @@ export default function ProfileScreen() {
             if (profile) {
                 setProfile({ ...profile, [field]: value } as any);
             }
-            const { data, error } = await supabase
-                .from('users')
-                .update({ [field]: value })
-                .eq('id', profile?.id)
-                .select()
-                .single();
-            if (error) throw error;
-            // If Supabase returned the updated row, use it (more accurate)
-            if (data) setProfile(data);
+            await updateProfileField(profile!.id, field, value);
         } catch (err: any) {
             Alert.alert(t('errors.generic'), err.message);
         }

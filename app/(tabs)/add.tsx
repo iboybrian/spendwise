@@ -3,6 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingVi
 import { useRouter } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
+import { insertExpense } from '@/lib/data';
+import { checkIsOnline } from '@/lib/connectivity';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Coffee, Car, Film, Heart, ShoppingBag, Home, Book, Package, ChevronDown, Check, ArrowLeft } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -86,9 +88,11 @@ export default function AddExpenseScreen() {
     };
 
     const categorizeExpense = async (text: string) => {
+        const online = await checkIsOnline();
+        if (!online) return; // Skip AI categorization when offline
+
         setIsCategorizing(true);
         try {
-            // For now, call Supabase Edge Function to categorize
             const { data, error } = await supabase.functions.invoke('categorize-expense', {
                 body: { description: text }
             });
@@ -101,7 +105,6 @@ export default function AddExpenseScreen() {
             }
         } catch (err) {
             console.log('AI categorization failed, defaulting to Other', err);
-            // Let it stay as what it was, or default to Other
         } finally {
             setIsCategorizing(false);
         }
@@ -119,18 +122,14 @@ export default function AddExpenseScreen() {
 
         setIsSaving(true);
         try {
-            const { error } = await supabase
-                .from('expenses')
-                .insert({
-                    user_id: profile?.id,
-                    amount: parseFloat(amount),
-                    description,
-                    category,
-                    category_confidence: confidence,
-                    date
-                });
-
-            if (error) throw error;
+            await insertExpense({
+                user_id: profile?.id,
+                amount: parseFloat(amount),
+                description,
+                category,
+                category_confidence: confidence,
+                date,
+            });
 
             router.back();
         } catch (err: any) {

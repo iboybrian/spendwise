@@ -8,7 +8,8 @@ import { supabase } from '@/lib/supabase';
 import { useStore } from '@/store/useStore';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Wallet, Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
+import { Logo } from '@/components/logo';
 import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import { useTranslation } from 'react-i18next';
@@ -185,11 +186,8 @@ export default function LoginScreen() {
         >
             <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
                 <View style={styles.header}>
-                    <View style={[styles.iconContainer, { backgroundColor: primaryColor }]}>
-                        <Wallet color="#FFF" size={32} />
-                    </View>
-                    <Text style={[styles.title, { color: textColor }]}>SpendWise</Text>
-                    <Text style={[styles.subtitle, { color: secondaryTextColor }]}>
+                    <Logo size={80} showText />
+                    <Text style={[styles.subtitle, { color: secondaryTextColor, marginTop: 12 }]}>
                         {isLogin ? t('auth.welcomeLogin') : t('auth.welcomeSignup')}
                     </Text>
                 </View>

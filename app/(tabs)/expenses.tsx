@@ -6,6 +6,11 @@ import {
 import { useRouter } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
+import {
+  fetchExpenses, insertExpense, updateExpense, deleteExpense,
+  fetchRecurringExpenses, insertRecurringExpense, deactivateRecurringExpense,
+} from '@/lib/data';
+import { checkIsOnline } from '@/lib/connectivity';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
     Plus, Coffee, Car, Film, Heart, ShoppingBag,
@@ -198,28 +203,19 @@ export default function ExpensesScreen() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            // Fetch recurring expenses
-            const { data: recData } = await supabase
-                .from('recurring_expenses')
-                .select('*')
-                .eq('user_id', profile?.id)
-                .eq('is_active', true)
-                .order('created_at', { ascending: false });
+            const online = await checkIsOnline();
 
+            // Fetch recurring expenses
+            const recData = profile?.id ? await fetchRecurringExpenses(profile.id) : [];
             setRecurringExpenses(recData || []);
 
             // Process recurring: generate daily entries for active recurring expenses
-            if (recData && recData.length > 0) {
+            if (recData && recData.length > 0 && online) {
                 await processRecurringExpenses(recData);
             }
 
             // Fetch all expenses
-            const { data: expData } = await supabase
-                .from('expenses')
-                .select('*')
-                .eq('user_id', profile?.id)
-                .order('date', { ascending: false });
-
+            const expData = profile?.id ? await fetchExpenses(profile.id) : [];
             setExpenses(expData || []);
         } catch (e) {
             console.error('Error fetching expenses:', e);
@@ -287,7 +283,7 @@ export default function ExpensesScreen() {
         }
         setIsSaving(true);
         try {
-            const { error } = await supabase.from('expenses').insert({
+            await insertExpense({
                 user_id: profile?.id,
                 amount: parseFloat(addAmount),
                 description: addDescription.trim(),
@@ -295,7 +291,6 @@ export default function ExpensesScreen() {
                 category_confidence: 1,
                 date: new Date().toISOString().split('T')[0],
             });
-            if (error) throw error;
             setAddAmount(''); setAddDescription(''); setAddCategory('Other');
             setShowAddModal(false);
             fetchData();
@@ -319,13 +314,12 @@ export default function ExpensesScreen() {
         }
         setIsSavingRec(true);
         try {
-            const { error } = await supabase.from('recurring_expenses').insert({
+            await insertRecurringExpense({
                 user_id: profile?.id,
                 amount: parseFloat(recAmount),
                 description: recDescription.trim(),
                 category: recCategory,
             });
-            if (error) throw error;
             setRecAmount(''); setRecDescription(''); setRecCategory('Other');
             setShowRecurringModal(false);
             fetchData();
@@ -341,7 +335,7 @@ export default function ExpensesScreen() {
         if (Platform.OS === 'web') {
             const confirmed = window.confirm(`${t('expenses.removeRecurring')}\n${t('expenses.removeRecurringMsg', { description })}`);
             if (confirmed) {
-                await supabase.from('recurring_expenses').update({ is_active: false }).eq('id', id);
+                await deactivateRecurringExpense(id);
                 fetchData();
             }
         } else {
@@ -353,7 +347,7 @@ export default function ExpensesScreen() {
                     {
                         text: t('common.delete'), style: 'destructive',
                         onPress: async () => {
-                            await supabase.from('recurring_expenses').update({ is_active: false }).eq('id', id);
+                            await deactivateRecurringExpense(id);
                             fetchData();
                         }
                     }
@@ -363,12 +357,12 @@ export default function ExpensesScreen() {
     };
 
     // Delete a single expense
-    const deleteExpense = async (id: string) => {
+    const deleteExpenseHandler = async (id: string) => {
         if (Platform.OS === 'web') {
             const confirmed = window.confirm(`${t('expenses.deleteExpense')}\n${t('expenses.deleteConfirm')}`);
             if (confirmed) {
                 setShowActionSheet(false);
-                await supabase.from('expenses').delete().eq('id', id);
+                await deleteExpense(id);
                 setSelectedExpense(null);
                 fetchData();
                 fetchSummary(slicerRange);
@@ -379,7 +373,7 @@ export default function ExpensesScreen() {
                 {
                     text: t('common.delete'), style: 'destructive',
                     onPress: async () => {
-                        await supabase.from('expenses').delete().eq('id', id);
+                        await deleteExpense(id);
                         setShowActionSheet(false);
                         setSelectedExpense(null);
                         fetchData();
@@ -418,14 +412,11 @@ export default function ExpensesScreen() {
         }
         setIsUpdating(true);
         try {
-            const { error } = await supabase.from('expenses')
-                .update({
-                    amount: parseFloat(editAmount),
-                    description: editDescription.trim(),
-                    category: editCategory,
-                })
-                .eq('id', selectedExpense.id);
-            if (error) throw error;
+            await updateExpense(selectedExpense.id, {
+                amount: parseFloat(editAmount),
+                description: editDescription.trim(),
+                category: editCategory,
+            });
             setShowEditModal(false);
             setSelectedExpense(null);
             fetchData();
@@ -906,7 +897,7 @@ export default function ExpensesScreen() {
                             <Pencil color={primaryColor} size={20} />
                             <Text style={[styles.actionOptionText, { color: textColor }]}>{t('common.edit')}</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionOption} onPress={() => selectedExpense && deleteExpense(selectedExpense.id)}>
+                        <TouchableOpacity style={styles.actionOption} onPress={() => selectedExpense && deleteExpenseHandler(selectedExpense.id)}>
                             <Trash2 color="#EF4444" size={20} />
                             <Text style={[styles.actionOptionText, { color: '#EF4444' }]}>{t('common.delete')}</Text>
                         </TouchableOpacity>

@@ -7,7 +7,7 @@ import {
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStore } from '@/store/useStore';
-import { supabase } from '@/lib/supabase';
+import { fetchExpenses, insertExpense } from '@/lib/data';
 import {
   Plus, Coffee, Car, Film, Heart, ShoppingBag,
   Home as HomeIcon, Book, Package, X, ChevronDown, Check
@@ -17,8 +17,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFocusEffect } from '@react-navigation/native';
 import { MotiView } from 'moti';
 import Animated, {
-  useSharedValue, useAnimatedStyle, withSpring,
-  withTiming, interpolate
+  useSharedValue, useAnimatedStyle, withSpring, interpolate
 } from 'react-native-reanimated';
 
 const CATEGORIES = ['Food', 'Transport', 'Entertainment', 'Health', 'Shopping', 'Home', 'Education', 'Other'];
@@ -231,23 +230,16 @@ export default function HomeScreen() {
     }, [])
   );
 
-  const fetchDashboardData = async () => {
-    try {
-      setLoading(true);
-      const today = new Date();
-      const todayStr = today.toISOString().split('T')[0];
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - today.getDay());
-      const weekStartStr = startOfWeek.toISOString().split('T')[0];
+    const fetchDashboardData = async () => {
+        try {
+            setLoading(true);
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+            const startOfWeek = new Date(today);
+            startOfWeek.setDate(today.getDate() - today.getDay());
+            const weekStartStr = startOfWeek.toISOString().split('T')[0];
 
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('*')
-        .eq('user_id', profile?.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      const allExpenses = data || [];
+            const allExpenses = profile?.id ? await fetchExpenses(profile.id) : [];
 
       const todayTotal = allExpenses
         .filter(e => e.date === todayStr)
@@ -284,7 +276,7 @@ export default function HomeScreen() {
     }
     setIsSaving(true);
     try {
-      const { error } = await supabase.from('expenses').insert({
+      await insertExpense({
         user_id: profile?.id,
         amount: parseFloat(quickAmount),
         description: quickDescription.trim(),
@@ -292,7 +284,6 @@ export default function HomeScreen() {
         category_confidence: 1,
         date: new Date().toISOString().split('T')[0],
       });
-      if (error) throw error;
       setQuickAmount(''); setQuickDescription(''); setQuickCategory('Other');
       setShowQuickAdd(false);
       fetchDashboardData();

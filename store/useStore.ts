@@ -18,17 +18,26 @@ interface UserState {
     session: Session | null;
     profile: UserProfile | null;
     isInitialized: boolean;
+    isOnline: boolean;
+    pendingChangesCount: number;
+    syncInProgress: boolean;
     setSession: (session: Session | null) => void;
     setProfile: (profile: UserProfile | null) => void;
     setInitialized: (initialized: boolean) => void;
     clearSession: () => void;
     changeLanguage: (lang: string) => Promise<void>;
+    setOnline: (online: boolean) => void;
+    setPendingChangesCount: (count: number) => void;
+    setSyncInProgress: (inProgress: boolean) => void;
 }
 
 export const useStore = create<UserState>((set, get) => ({
     session: null,
     profile: null,
     isInitialized: false,
+    isOnline: true,
+    pendingChangesCount: 0,
+    syncInProgress: false,
     setSession: (session) => set({ session }),
     setProfile: (profile) => {
         set({ profile });
@@ -39,6 +48,9 @@ export const useStore = create<UserState>((set, get) => ({
     },
     setInitialized: (isInitialized) => set({ isInitialized }),
     clearSession: () => set({ session: null, profile: null }),
+    setOnline: (isOnline) => set({ isOnline }),
+    setPendingChangesCount: (pendingChangesCount) => set({ pendingChangesCount }),
+    setSyncInProgress: (syncInProgress) => set({ syncInProgress }),
     changeLanguage: async (lang: string) => {
         const { profile } = get();
         // 1. Instantly swap the i18n dictionary
@@ -49,10 +61,8 @@ export const useStore = create<UserState>((set, get) => ({
         }
         // 3. Persist to Supabase
         if (profile?.id) {
-            await supabase
-                .from('users')
-                .update({ language: lang })
-                .eq('id', profile.id);
+            const { updateProfileField } = await import('@/lib/data');
+            await updateProfileField(profile.id, 'language', lang);
         }
     },
 }))
