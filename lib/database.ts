@@ -1,192 +1,125 @@
-import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 
-let db: SQLiteDatabase | null = null
-
-export async function initDatabase(): Promise<SQLiteDatabase> {
-  if (db) return db
-
-  db = await openDatabaseAsync('spendwise.db')
-
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS expenses (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      amount REAL NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      category TEXT NOT NULL DEFAULT 'Other',
-      category_confidence REAL NOT NULL DEFAULT 0,
-      date TEXT NOT NULL,
-      recurring_expense_id TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS recurring_expenses (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      amount REAL NOT NULL,
-      description TEXT NOT NULL DEFAULT '',
-      category TEXT NOT NULL DEFAULT 'Other',
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS profile (
-      id TEXT PRIMARY KEY,
-      email TEXT,
-      full_name TEXT,
-      salary REAL,
-      weekly_budget REAL,
-      currency TEXT DEFAULT 'USD',
-      language TEXT DEFAULT 'es',
-      onboarding_completed INTEGER DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS pending_changes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      table_name TEXT NOT NULL,
-      operation TEXT NOT NULL,
-      record_id TEXT,
-      data TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `)
-
-  return db
+const KEYS = {
+  expenses: '@offline_expenses',
+  recurring: '@offline_recurring',
+  profile: '@offline_profile',
+  pendingChanges: '@offline_pending',
 }
 
-export function getDatabase(): SQLiteDatabase {
-  if (!db) throw new Error('Database not initialized. Call initDatabase() first.')
-  return db
+async function getAll<T>(key: string): Promise<T[]> {
+  const raw = await AsyncStorage.getItem(key)
+  return raw ? JSON.parse(raw) : []
 }
 
-// ─── Expenses ──────────────────────────────────────────
+async function saveAll(key: string, data: any[]): Promise<void> {
+  await AsyncStorage.setItem(key, JSON.stringify(data))
+}
+
+async function getOne<T>(key: string): Promise<T | null> {
+  const all = await getAll<any>(key)
+  return all[0] ?? null
+}
+
+export async function initDatabase(): Promise<void> {
+  // AsyncStorage is always ready
+}
+
+export function getDatabase(): never {
+  throw new Error('getDatabase() not available on web. Use AsyncStorage-backed functions.')
+}
 
 export async function getLocalExpenses(userId: string): Promise<any[]> {
-  return getDatabase().getAllAsync(
-    'SELECT * FROM expenses WHERE user_id = ? ORDER BY date DESC, created_at DESC',
-    [userId]
+  const all = await getAll<any>(KEYS.expenses)
+  return all.filter(e => e.user_id === userId).sort((a, b) =>
+    (b.date || b.created_at)?.localeCompare(a.date || a.created_at)
   )
 }
 
 export async function saveLocalExpense(expense: any): Promise<void> {
-  await getDatabase().runAsync(
-    `INSERT OR REPLACE INTO expenses (id, user_id, amount, description, category, category_confidence, date, recurring_expense_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`,
-    [expense.id, expense.user_id, expense.amount, expense.description,
-     expense.category, expense.category_confidence ?? 0, expense.date,
-     expense.recurring_expense_id ?? null, expense.created_at ?? null]
-  )
+  const all = await getAll<any>(KEYS.expenses)
+  const idx = all.findIndex(e => e.id === expense.id)
+  if (idx >= 0) all[idx] = expense
+  else all.push(expense)
+  await saveAll(KEYS.expenses, all)
 }
 
 export async function saveLocalExpenses(expenses: any[]): Promise<void> {
-  for (const e of expenses) {
-    await saveLocalExpense(e)
-  }
+  for (const e of expenses) await saveLocalExpense(e)
 }
 
 export async function updateLocalExpense(id: string, changes: any): Promise<void> {
-  const sets: string[] = []
-  const vals: any[] = []
-  if (changes.amount !== undefined) { sets.push('amount = ?'); vals.push(changes.amount) }
-  if (changes.description !== undefined) { sets.push('description = ?'); vals.push(changes.description) }
-  if (changes.category !== undefined) { sets.push('category = ?'); vals.push(changes.category) }
-  if (changes.date !== undefined) { sets.push('date = ?'); vals.push(changes.date) }
-  if (sets.length === 0) return
-  vals.push(id)
-  await getDatabase().runAsync(
-    `UPDATE expenses SET ${sets.join(', ')} WHERE id = ?`,
-    vals
-  )
+  const all = await getAll<any>(KEYS.expenses)
+  const idx = all.findIndex(e => e.id === id)
+  if (idx >= 0) Object.assign(all[idx], changes)
+  await saveAll(KEYS.expenses, all)
 }
 
 export async function deleteLocalExpense(id: string): Promise<void> {
-  await getDatabase().runAsync('DELETE FROM expenses WHERE id = ?', [id])
+  const all = await getAll<any>(KEYS.expenses)
+  await saveAll(KEYS.expenses, all.filter(e => e.id !== id))
 }
 
-// ─── Recurring Expenses ────────────────────────────────
-
 export async function getLocalRecurringExpenses(userId: string): Promise<any[]> {
-  return getDatabase().getAllAsync(
-    'SELECT * FROM recurring_expenses WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC',
-    [userId]
-  )
+  const all = await getAll<any>(KEYS.recurring)
+  return all.filter(r => r.user_id === userId && r.is_active !== false)
 }
 
 export async function saveLocalRecurringExpense(rec: any): Promise<void> {
-  await getDatabase().runAsync(
-    `INSERT OR REPLACE INTO recurring_expenses (id, user_id, amount, description, category, is_active, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`,
-    [rec.id, rec.user_id, rec.amount, rec.description, rec.category,
-     rec.is_active ?? 1, rec.created_at ?? null]
-  )
+  const all = await getAll<any>(KEYS.recurring)
+  const idx = all.findIndex(r => r.id === rec.id)
+  if (idx >= 0) all[idx] = rec
+  else all.push(rec)
+  await saveAll(KEYS.recurring, all)
 }
 
 export async function saveLocalRecurringExpenses(recs: any[]): Promise<void> {
-  for (const r of recs) {
-    await saveLocalRecurringExpense(r)
-  }
+  for (const r of recs) await saveLocalRecurringExpense(r)
 }
 
 export async function deactivateLocalRecurringExpense(id: string): Promise<void> {
-  await getDatabase().runAsync(
-    'UPDATE recurring_expenses SET is_active = 0 WHERE id = ?', [id]
-  )
+  const all = await getAll<any>(KEYS.recurring)
+  const idx = all.findIndex(r => r.id === id)
+  if (idx >= 0) all[idx].is_active = false
+  await saveAll(KEYS.recurring, all)
 }
 
-// ─── Profile ───────────────────────────────────────────
-
 export async function getLocalProfile(): Promise<any | null> {
-  return getDatabase().getFirstAsync('SELECT * FROM profile LIMIT 1')
+  return getOne(KEYS.profile)
 }
 
 export async function saveLocalProfile(profile: any): Promise<void> {
-  await getDatabase().runAsync(
-    `INSERT OR REPLACE INTO profile (id, email, full_name, salary, weekly_budget, currency, language, onboarding_completed)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [profile.id, profile.email ?? '', profile.full_name ?? '',
-     profile.salary ?? null, profile.weekly_budget ?? null,
-     profile.currency ?? 'USD', profile.language ?? 'es',
-     profile.onboarding_completed ? 1 : 0]
-  )
+  await AsyncStorage.setItem(KEYS.profile, JSON.stringify(profile))
 }
 
 export async function updateLocalProfileField(id: string, field: string, value: any): Promise<void> {
-  await getDatabase().runAsync(
-    `UPDATE profile SET ${field} = ? WHERE id = ?`, [value, id]
-  )
+  const profile = await getOne<any>(KEYS.profile)
+  if (profile) {
+    profile[field] = value
+    await saveLocalProfile(profile)
+  }
 }
 
-// ─── Pending Changes (Sync Queue) ──────────────────────
-
-export async function addPendingChange(
-  tableName: string,
-  operation: string,
-  recordId: string | null,
-  data: any
-): Promise<void> {
-  await getDatabase().runAsync(
-    'INSERT INTO pending_changes (table_name, operation, record_id, data) VALUES (?, ?, ?, ?)',
-    [tableName, operation, recordId, JSON.stringify(data)]
-  )
+export async function addPendingChange(tableName: string, operation: string, recordId: string | null, data: any): Promise<void> {
+  const all = await getAll<any>(KEYS.pendingChanges)
+  all.push({ id: Date.now(), table_name: tableName, operation, record_id: recordId, data: JSON.stringify(data), created_at: new Date().toISOString() })
+  await saveAll(KEYS.pendingChanges, all)
 }
 
 export async function getPendingChanges(): Promise<any[]> {
-  return getDatabase().getAllAsync(
-    'SELECT * FROM pending_changes ORDER BY id ASC'
-  )
+  return getAll(KEYS.pendingChanges)
 }
 
 export async function removePendingChange(id: number): Promise<void> {
-  await getDatabase().runAsync('DELETE FROM pending_changes WHERE id = ?', [id])
+  const all = await getAll<any>(KEYS.pendingChanges)
+  await saveAll(KEYS.pendingChanges, all.filter(c => c.id !== id))
 }
 
 export async function clearPendingChanges(): Promise<void> {
-  await getDatabase().runAsync('DELETE FROM pending_changes')
+  await saveAll(KEYS.pendingChanges, [])
 }
 
 export async function getPendingChangesCount(): Promise<number> {
-  const row = await getDatabase().getFirstAsync<{ count: number }>(
-    'SELECT COUNT(*) as count FROM pending_changes'
-  )
-  return row?.count ?? 0
+  const all = await getAll<any>(KEYS.pendingChanges)
+  return all.length
 }
