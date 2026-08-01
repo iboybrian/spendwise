@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+﻿import { supabase } from './supabase'
 import { checkIsOnline } from './connectivity'
 import {
   getLocalExpenses, saveLocalExpense, saveLocalExpenses,
@@ -12,6 +12,10 @@ import { useStore } from '@/store/useStore'
 
 function generateId(): string {
   return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+}
+
+async function bumpPending(): Promise<void> {
+  useStore.getState().setPendingChangesCount(await getPendingChangesCount())
 }
 
 // ─── Expenses ──────────────────────────────────────────
@@ -54,8 +58,7 @@ export async function insertExpense(expense: any): Promise<any> {
 
   await saveLocalExpense(newExpense)
   await addPendingChange('expenses', 'INSERT', id, newExpense)
-  const count = await getPendingChangesCount()
-  useStore.getState().setPendingChangesCount(count)
+  await bumpPending()
   return newExpense
 }
 
@@ -71,8 +74,7 @@ export async function updateExpense(id: string, changes: any): Promise<void> {
 
   await updateLocalExpense(id, changes)
   await addPendingChange('expenses', 'UPDATE', id, { changes })
-  const count = await getPendingChangesCount()
-  useStore.getState().setPendingChangesCount(count)
+  await bumpPending()
 }
 
 export async function deleteExpense(id: string): Promise<void> {
@@ -87,8 +89,7 @@ export async function deleteExpense(id: string): Promise<void> {
 
   await deleteLocalExpense(id)
   await addPendingChange('expenses', 'DELETE', id, {})
-  const count = await getPendingChangesCount()
-  useStore.getState().setPendingChangesCount(count)
+  await bumpPending()
 }
 
 // ─── Recurring Expenses ────────────────────────────────
@@ -132,8 +133,7 @@ export async function insertRecurringExpense(rec: any): Promise<any> {
 
   await saveLocalRecurringExpense(newRec)
   await addPendingChange('recurring_expenses', 'INSERT', id, newRec)
-  const count = await getPendingChangesCount()
-  useStore.getState().setPendingChangesCount(count)
+  await bumpPending()
   return newRec
 }
 
@@ -149,8 +149,7 @@ export async function deactivateRecurringExpense(id: string): Promise<void> {
 
   await deactivateLocalRecurringExpense(id)
   await addPendingChange('recurring_expenses', 'UPDATE', id, { is_active: false })
-  const count = await getPendingChangesCount()
-  useStore.getState().setPendingChangesCount(count)
+  await bumpPending()
 }
 
 // ─── Profile ───────────────────────────────────────────
@@ -191,8 +190,7 @@ export async function updateProfileField(id: string, field: string, value: any):
 
   await updateLocalProfileField(id, field, value)
   await addPendingChange('profile', 'UPDATE', id, { [field]: value })
-  const count = await getPendingChangesCount()
-  useStore.getState().setPendingChangesCount(count)
+  await bumpPending()
 }
 
 export async function updateProfile(profile: any): Promise<void> {
@@ -208,14 +206,5 @@ export async function updateProfile(profile: any): Promise<void> {
 
   await saveLocalProfile(profile)
   await addPendingChange('profile', 'UPDATE', profile.id, profile)
-  const count = await getPendingChangesCount()
-  useStore.getState().setPendingChangesCount(count)
-}
-
-// ─── Recurring from Supabase (for batch insert during onboarding) ───
-
-export async function insertRecurringExpensesBatch(recs: any[]): Promise<void> {
-  for (const rec of recs) {
-    await insertRecurringExpense(rec)
-  }
+  await bumpPending()
 }

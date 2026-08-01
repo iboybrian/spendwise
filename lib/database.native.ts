@@ -54,7 +54,7 @@ export async function initDatabase(): Promise<SQLiteDatabase> {
   return db
 }
 
-export function getDatabase(): SQLiteDatabase {
+function getDatabase(): SQLiteDatabase {
   if (!db) throw new Error('Database not initialized. Call initDatabase() first.')
   return db
 }

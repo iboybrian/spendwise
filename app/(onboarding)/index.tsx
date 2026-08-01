@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useStore } from '@/store/useStore';
-import { updateProfile, insertRecurringExpensesBatch } from '@/lib/data';
+import { updateProfile, insertRecurringExpense } from '@/lib/data';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTranslation } from 'react-i18next';
 import { DollarSign, PieChart, ArrowRight, Check, Plus, Receipt, Trash2 } from 'lucide-react-native';
@@ -108,14 +108,14 @@ export default function OnboardingScreen() {
 
             // Save monthly costs into recurring_expenses table
             if (monthlyCosts.length > 0 && profile?.id) {
-                const costsToInsert = monthlyCosts.map(cost => ({
-                    user_id: profile.id,
-                    description: cost.description,
-                    amount: parseFloat(cost.amount),
-                    category: 'Home',
-                    is_active: true,
-                }));
-                await insertRecurringExpensesBatch(costsToInsert);
+                for (const cost of monthlyCosts) {
+                    await insertRecurringExpense({
+                        user_id: profile.id,
+                        description: cost.description,
+                        amount: parseFloat(cost.amount),
+                        category: 'Home',
+                    });
+                }
             }
 
             router.replace('/(tabs)');

@@ -25,10 +25,6 @@ export async function initDatabase(): Promise<void> {
   // AsyncStorage is always ready
 }
 
-export function getDatabase(): never {
-  throw new Error('getDatabase() not available on web. Use AsyncStorage-backed functions.')
-}
-
 export async function getLocalExpenses(userId: string): Promise<any[]> {
   const all = await getAll<any>(KEYS.expenses)
   return all.filter(e => e.user_id === userId).sort((a, b) =>
