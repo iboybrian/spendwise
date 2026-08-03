@@ -20,6 +20,8 @@ Expo SDK 54 (new architecture) + React Native 0.81 + TypeScript, Expo Router fil
 
 Env vars `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` come from `.env`.
 
+**Dependency footgun:** `react-native-gifted-charts` (the `PieChart` on the expenses screen) `require`s `expo-linear-gradient` at module load and throws `Gradient package was not found` if it is absent — nothing in this repo imports it directly. Before removing a dependency that source-level grep says is unused, check the `peerDependencies` of packages inside `node_modules`.
+
 ## Architecture
 
 ### Offline-first data flow (the big picture)
