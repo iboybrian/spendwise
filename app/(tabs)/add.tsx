@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
 import { insertExpense } from '@/lib/data';
+import { toLocalDateStr } from '@/lib/dates';
 import { checkIsOnline } from '@/lib/connectivity';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Coffee, Car, Film, Heart, ShoppingBag, Home, Book, Package, ChevronDown, Check, ArrowLeft } from 'lucide-react-native';
@@ -39,7 +40,7 @@ export default function AddExpenseScreen() {
     const [description, setDescription] = useState('');
     const [category, setCategory] = useState('Other');
     const [confidence, setConfidence] = useState(0);
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [date, setDate] = useState(toLocalDateStr());
 
     const [isCategorizing, setIsCategorizing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);

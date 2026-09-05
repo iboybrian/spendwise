@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStore } from '@/store/useStore';
 import { fetchExpenses, insertExpense } from '@/lib/data';
+import { toLocalDateStr, startOfWeek } from '@/lib/dates';
 import {
   Plus, Coffee, Car, Film, Heart, ShoppingBag,
   Home as HomeIcon, Book, Package, X, ChevronDown, Check
@@ -233,11 +234,8 @@ export default function HomeScreen() {
     const fetchDashboardData = async () => {
         try {
             setLoading(true);
-            const today = new Date();
-            const todayStr = today.toISOString().split('T')[0];
-            const startOfWeek = new Date(today);
-            startOfWeek.setDate(today.getDate() - today.getDay());
-            const weekStartStr = startOfWeek.toISOString().split('T')[0];
+            const todayStr = toLocalDateStr();
+            const weekStartStr = toLocalDateStr(startOfWeek());
 
             const allExpenses = profile?.id ? await fetchExpenses(profile.id) : [];
 
@@ -245,7 +243,7 @@ export default function HomeScreen() {
         .filter(e => e.date === todayStr)
         .reduce((sum, e) => sum + Number(e.amount), 0);
 
-      const weeklyExpenses = allExpenses.filter(e => e.date >= weekStartStr);
+      const weeklyExpenses = allExpenses.filter(e => e.date >= weekStartStr && e.date <= todayStr);
       const weeklyTotal = weeklyExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
       const breakdown: Record<string, number> = {};
@@ -282,7 +280,7 @@ export default function HomeScreen() {
         description: quickDescription.trim(),
         category: quickCategory,
         category_confidence: 1,
-        date: new Date().toISOString().split('T')[0],
+        date: toLocalDateStr(),
       });
       setQuickAmount(''); setQuickDescription(''); setQuickCategory('Other');
       setShowQuickAdd(false);

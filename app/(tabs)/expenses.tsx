@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, Modal, Pressable, TextInput, Alert, Platform
@@ -11,6 +11,7 @@ import {
   fetchRecurringExpenses, insertRecurringExpense, deactivateRecurringExpense,
 } from '@/lib/data';
 import { checkIsOnline } from '@/lib/connectivity';
+import { toLocalDateStr, startOfWeek } from '@/lib/dates';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
     Plus, Coffee, Car, Film, Heart, ShoppingBag,
@@ -67,8 +68,6 @@ export default function ExpensesScreen() {
 
     // Date slicer and chart state
     const [slicerRange, setSlicerRange] = useState<string>('This Week');
-    const [summaryData, setSummaryData] = useState<any[]>([]);
-    const [isSummaryLoading, setIsSummaryLoading] = useState(false);
 
     // DropDown states
     const [periodOpen, setPeriodOpen] = useState(false);
@@ -159,46 +158,43 @@ export default function ExpensesScreen() {
 
     useEffect(() => {
         fetchData();
-        fetchSummary(slicerRange);
     }, [slicerRange]);
 
-    const fetchSummary = useCallback(async (range: string) => {
-        setIsSummaryLoading(true);
-        try {
-            let startDate = new Date();
-            let endDate = new Date();
-            
-            if (range === 'This Week') {
-                const day = startDate.getDay();
-                const diff = startDate.getDate() - day + (day === 0 ? -6 : 1); 
-                startDate.setDate(diff);
-            } else if (range === 'Month to Date') {
-                startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
-            } else if (range === 'Last Month') {
-                startDate = new Date(startDate.getFullYear(), startDate.getMonth() - 1, 1);
-                endDate = new Date(endDate.getFullYear(), endDate.getMonth(), 0);
-            } else if (range === 'Year to Date') {
-                startDate = new Date(startDate.getFullYear(), 0, 1);
-            } else if (range === 'Custom Range') {
-                if (customStart && customEnd) {
-                    startDate = new Date(customStart);
-                    endDate = new Date(customEnd);
-                }
-            }
-            
-            const startStr = startDate.toISOString().split('T')[0];
-            const endStr = endDate.toISOString().split('T')[0];
+    // Inclusive [start, end] of the selected period, as local YYYY-MM-DD.
+    const [rangeStart, rangeEnd] = useMemo(() => {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        let start = startOfWeek(now);
+        let end = today;
 
-            const { data, error } = await supabase.rpc('get_expense_summary', { start_date: startStr, end_date: endStr });
-            if (error) throw error;
-            
-            setSummaryData(data || []);
-        } catch (err) {
-            console.error('Failed to fetch summary:', err);
-        } finally {
-            setIsSummaryLoading(false);
+        if (slicerRange === 'Month to Date') {
+            start = new Date(now.getFullYear(), now.getMonth(), 1);
+        } else if (slicerRange === 'Last Month') {
+            start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            end = new Date(now.getFullYear(), now.getMonth(), 0);
+        } else if (slicerRange === 'Year to Date') {
+            start = new Date(now.getFullYear(), 0, 1);
+        } else if (slicerRange === 'Custom Range' && customStart && customEnd) {
+            return [customStart, customEnd];
         }
-    }, [profile?.id]);
+
+        return [toLocalDateStr(start), toLocalDateStr(end)];
+    }, [slicerRange, customStart, customEnd]);
+
+    // Category totals for the period. Derived from the same `expenses` the list
+    // renders, so the chart total and the Home screen can never disagree.
+    const summaryData = useMemo(() => {
+        const byCategory: Record<string, number> = {};
+        expenses
+            .filter(e => e.date >= rangeStart && e.date <= rangeEnd)
+            .forEach(e => {
+                const cat = e.category || 'Other';
+                byCategory[cat] = (byCategory[cat] || 0) + Number(e.amount);
+            });
+        return Object.entries(byCategory)
+            .map(([category, total]) => ({ category, total }))
+            .sort((a, b) => b.total - a.total);
+    }, [expenses, rangeStart, rangeEnd]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -227,13 +223,13 @@ export default function ExpensesScreen() {
     // Process recurring expenses: create daily entries for today and any missed days
     const processRecurringExpenses = async (recurring: any[]) => {
         const today = new Date();
-        const todayStr = today.toISOString().split('T')[0];
+        const todayStr = toLocalDateStr(today);
         const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
 
         for (const rec of recurring) {
             const dailyAmount = Number(rec.amount) / daysInMonth;
             const createdDate = new Date(rec.created_at);
-            const startStr = createdDate.toISOString().split('T')[0];
+            const startStr = toLocalDateStr(createdDate);
 
             // Check which days from creation to today already have entries
             const { data: existingEntries } = await supabase
@@ -249,8 +245,8 @@ export default function ExpensesScreen() {
             const missing: any[] = [];
             const cursor = new Date(Math.max(createdDate.getTime(), new Date(today.getFullYear(), today.getMonth(), 1).getTime()));
 
-            while (cursor.toISOString().split('T')[0] <= todayStr) {
-                const dateStr = cursor.toISOString().split('T')[0];
+            while (toLocalDateStr(cursor) <= todayStr) {
+                const dateStr = toLocalDateStr(cursor);
                 if (!existingDates.has(dateStr) && dateStr >= startStr) {
                     missing.push({
                         user_id: profile?.id,
@@ -289,12 +285,11 @@ export default function ExpensesScreen() {
                 description: addDescription.trim(),
                 category: addCategory,
                 category_confidence: 1,
-                date: new Date().toISOString().split('T')[0],
+                date: toLocalDateStr(),
             });
             setAddAmount(''); setAddDescription(''); setAddCategory('Other');
             setShowAddModal(false);
             fetchData();
-            fetchSummary(slicerRange);
         } catch (err: any) {
             Alert.alert(t('common.error'), err.message || 'Failed to save.');
         } finally {
@@ -365,7 +360,6 @@ export default function ExpensesScreen() {
                 await deleteExpense(id);
                 setSelectedExpense(null);
                 fetchData();
-                fetchSummary(slicerRange);
             }
         } else {
             Alert.alert(t('expenses.deleteExpense'), t('expenses.deleteConfirm'), [
@@ -377,7 +371,6 @@ export default function ExpensesScreen() {
                         setShowActionSheet(false);
                         setSelectedExpense(null);
                         fetchData();
-                        fetchSummary(slicerRange);
                     }
                 }
             ]);
@@ -420,7 +413,6 @@ export default function ExpensesScreen() {
             setShowEditModal(false);
             setSelectedExpense(null);
             fetchData();
-            fetchSummary(slicerRange);
         } catch (err: any) {
             Alert.alert(t('common.error'), err.message || 'Failed to update.');
         } finally {
@@ -596,7 +588,7 @@ export default function ExpensesScreen() {
                 <View style={[styles.chartContainer, { backgroundColor: cardBg, borderBottomColor: borderColor }]}>
 
                     <View style={styles.chartWrapper}>
-                        {isSummaryLoading ? (
+                        {loading ? (
                             <ActivityIndicator size="large" color={primaryColor} />
                         ) : summaryData.length > 0 ? (
                             <View style={styles.chartRow}>
@@ -778,7 +770,6 @@ export default function ExpensesScreen() {
                             style={[styles.saveBtn, { backgroundColor: primaryColor }]}
                             onPress={() => {
                                 setShowCustomDateModal(false);
-                                fetchSummary('Custom Range');
                             }}
                         >
                             <Text style={styles.saveBtnText}>{t('common.save')}</Text>
