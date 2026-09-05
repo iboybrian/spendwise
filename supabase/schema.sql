@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS public.expenses (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- One generated row per recurring expense per day. The client generates missing
+-- days by reading which ones exist and then inserting the rest; two overlapping
+-- runs would otherwise both insert the same day. Partial, so manually entered
+-- expenses can still repeat freely on the same date.
+CREATE UNIQUE INDEX IF NOT EXISTS expenses_recurring_day_uniq
+  ON public.expenses (recurring_expense_id, date)
+  WHERE recurring_expense_id IS NOT NULL;
+
 ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view own expenses" ON public.expenses FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can insert own expenses" ON public.expenses FOR INSERT WITH CHECK (auth.uid() = user_id);

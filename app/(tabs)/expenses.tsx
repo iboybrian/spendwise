@@ -262,7 +262,14 @@ export default function ExpensesScreen() {
             }
 
             if (missing.length > 0) {
-                await supabase.from('expenses').insert(missing);
+                // Two overlapping runs can both see the same day as missing between
+                // the read above and this write, which is how duplicate daily charges
+                // got created. The unique index on (recurring_expense_id, date) makes
+                // the loser a no-op instead of a second charge.
+                await supabase.from('expenses').upsert(missing, {
+                    onConflict: 'recurring_expense_id,date',
+                    ignoreDuplicates: true,
+                });
             }
         }
     };
