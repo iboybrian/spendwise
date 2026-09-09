@@ -266,10 +266,18 @@ export default function ExpensesScreen() {
                 // the read above and this write, which is how duplicate daily charges
                 // got created. The unique index on (recurring_expense_id, date) makes
                 // the loser a no-op instead of a second charge.
-                await supabase.from('expenses').upsert(missing, {
+                //
+                // That index must NOT be partial: PostgREST emits a bare
+                // ON CONFLICT (recurring_expense_id, date), and Postgres cannot infer
+                // a partial index without repeating its predicate, so a partial one
+                // fails every insert with 42P10.
+                const { error } = await supabase.from('expenses').upsert(missing, {
                     onConflict: 'recurring_expense_id,date',
                     ignoreDuplicates: true,
                 });
+                // Never swallow this. Silently dropping these writes stops recurring
+                // expenses from being recorded at all, and nothing on screen says so.
+                if (error) throw error;
             }
         }
     };

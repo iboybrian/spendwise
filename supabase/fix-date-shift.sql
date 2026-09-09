@@ -100,14 +100,19 @@ WHERE id IN (
 -- insertar el mismo dia: por eso los duplicados. Este indice hace
 -- imposible el doble cobro a nivel de base de datos.
 --
--- Es parcial: solo aplica a filas generadas por un recurrente, asi
--- que seguis pudiendo capturar varios gastos manuales el mismo dia.
+-- NO lo hagas parcial. Un `WHERE recurring_expense_id IS NOT NULL`
+-- sobra (los NULL se comparan como distintos, asi que los gastos
+-- manuales ya pueden repetirse el mismo dia) y ademas rompe la app:
+-- PostgREST emite un ON CONFLICT (recurring_expense_id, date) pelado,
+-- que Postgres no puede casar contra un indice parcial, y falla cada
+-- insert de recurrente con 42P10.
 --
 -- Falla si todavia hay duplicados. Corre el paso 4 primero.
 -- ------------------------------------------------------------
-CREATE UNIQUE INDEX IF NOT EXISTS expenses_recurring_day_uniq
-  ON public.expenses (recurring_expense_id, date)
-  WHERE recurring_expense_id IS NOT NULL;
+DROP INDEX IF EXISTS public.expenses_recurring_day_uniq;
+
+CREATE UNIQUE INDEX expenses_recurring_day_uniq
+  ON public.expenses (recurring_expense_id, date);
 
 
 -- ------------------------------------------------------------

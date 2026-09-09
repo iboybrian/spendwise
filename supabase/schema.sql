@@ -34,11 +34,15 @@ CREATE TABLE IF NOT EXISTS public.expenses (
 
 -- One generated row per recurring expense per day. The client generates missing
 -- days by reading which ones exist and then inserting the rest; two overlapping
--- runs would otherwise both insert the same day. Partial, so manually entered
--- expenses can still repeat freely on the same date.
+-- runs would otherwise both insert the same day.
+--
+-- Deliberately NOT partial. `WHERE recurring_expense_id IS NOT NULL` would be
+-- redundant (NULLs compare as distinct, so manual expenses already repeat freely
+-- on the same date) and it breaks the client: PostgREST emits a bare
+-- ON CONFLICT (recurring_expense_id, date), which Postgres cannot match against a
+-- partial index, failing every recurring insert with 42P10.
 CREATE UNIQUE INDEX IF NOT EXISTS expenses_recurring_day_uniq
-  ON public.expenses (recurring_expense_id, date)
-  WHERE recurring_expense_id IS NOT NULL;
+  ON public.expenses (recurring_expense_id, date);
 
 ALTER TABLE public.expenses ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view own expenses" ON public.expenses FOR SELECT USING (auth.uid() = user_id);
