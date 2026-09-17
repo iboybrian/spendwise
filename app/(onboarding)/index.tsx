@@ -3,7 +3,6 @@ import {
     View, Text, TextInput, TouchableOpacity, StyleSheet,
     KeyboardAvoidingView, Platform, Alert, ScrollView, FlatList, useWindowDimensions
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { updateProfile, insertRecurringExpense } from '@/lib/data';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -21,7 +20,6 @@ export default function OnboardingScreen() {
     const [budget, setBudget] = useState('');
     const [saving, setSaving] = useState(false);
     const colorScheme = useColorScheme();
-    const router = useRouter();
     const { profile, setProfile } = useStore();
     const { t } = useTranslation();
 
@@ -118,7 +116,9 @@ export default function OnboardingScreen() {
                 }
             }
 
-            router.replace('/(tabs)');
+            // No router.replace here: setProfile above flips onboarding_completed,
+            // and the guard in app/_layout.tsx does the redirect. Doing both fired
+            // two navigations at once and left the transition half-applied.
 
         } catch (error: any) {
             Alert.alert(t('errors.generic'), error.message || 'Failed to save settings.');

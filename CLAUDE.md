@@ -10,9 +10,11 @@ npm run android    # expo start --android
 npm run ios        # expo start --ios
 npm run web        # expo start --web
 npm run lint       # expo lint (ESLint, eslint-config-expo)
+
+node lib/dates.test.ts   # the only test file; plain node:assert, Node >=23 strips the types
 ```
 
-No test suite exists. Supabase Edge Functions deploy via `supabase functions deploy <name>`.
+Supabase Edge Functions deploy via `supabase functions deploy <name>`. The web build is deployed by Vercel using [vercel.json](vercel.json) (`npx expo export -p web` → `dist`, all paths rewritten to `/` for client-side routing).
 
 ## Stack
 
@@ -26,7 +28,9 @@ Env vars `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` come fro
 
 ### Offline-first data flow (the big picture)
 
-All reads/writes go through [lib/data.ts](lib/data.ts) — never call Supabase directly from screens for expense/recurring/profile CRUD. Each function checks connectivity ([lib/connectivity.ts](lib/connectivity.ts)), tries Supabase when online, and on failure or offline falls back to the local store **and** queues the mutation in a pending-changes table. [lib/sync.ts](lib/sync.ts) replays the queue against Supabase; it is triggered automatically when the app comes back online (Zustand subscription in [app/_layout.tsx](app/_layout.tsx)).
+All reads/writes go through [lib/data.ts](lib/data.ts) — never call Supabase directly from screens for expense/recurring/profile CRUD (the recurring generator below is the one deliberate exception). Each function checks connectivity ([lib/connectivity.ts](lib/connectivity.ts)), tries Supabase when online, and on failure or offline falls back to the local store **and** queues the mutation in a pending-changes table. [lib/sync.ts](lib/sync.ts) replays the queue against Supabase; it is triggered automatically when the app comes back online (Zustand subscription in [app/_layout.tsx](app/_layout.tsx)).
+
+IDs are generated client-side (`crypto.randomUUID()` in `lib/data.ts`) so a row created offline keeps the same identity once it syncs — don't switch inserts back to server-generated ids.
 
 The local store is platform-split by Metro resolution:
 - [lib/database.ts](lib/database.ts) — web, backed by AsyncStorage
@@ -35,6 +39,16 @@ The local store is platform-split by Metro resolution:
 Both files must export the identical API (`getLocalExpenses`, `saveLocalExpense`, `addPendingChange`, etc.). Changing one requires mirroring the change in the other.
 
 Pending-changes count and sync state live in the Zustand store ([store/useStore.ts](store/useStore.ts)) and surface in the UI via [components/connection-banner.tsx](components/connection-banner.tsx).
+
+### Dates are calendar days, not instants
+
+Use `toLocalDateStr` / `startOfWeek` from [lib/dates.ts](lib/dates.ts) for anything that touches an expense `date` or a weekly range. `toISOString()` serializes in UTC, so west of UTC an evening expense gets stamped with tomorrow — that bug shipped once. Home and Expenses must derive their totals from the same helpers or their numbers drift apart. [supabase/diagnose-date-shift.sql](supabase/diagnose-date-shift.sql) and [supabase/fix-date-shift.sql](supabase/fix-date-shift.sql) repair rows written before the fix.
+
+### Recurring expenses
+
+`recurring_expenses` rows store a **monthly** amount; deactivation is a soft toggle (`is_active`), not a delete. The daily charges are materialized **client-side** by `processRecurringExpenses` in [app/(tabs)/expenses.tsx](app/(tabs)/expenses.tsx): on each online fetch it reads which days already exist, then inserts the missing ones at `amount / daysInMonth`. This is the one place that talks to `supabase` directly instead of going through `lib/data.ts` (it only runs online).
+
+Two overlapping runs can both see the same day as missing, so the write is an `upsert` with `onConflict: 'recurring_expense_id,date'` backed by the unique index `expenses_recurring_day_uniq`. That index must stay **non-partial** — PostgREST emits a bare `ON CONFLICT (recurring_expense_id, date)` and Postgres fails every insert with `42P10` against a partial index. Never swallow the upsert error; silent failure means recurring expenses stop being recorded with nothing on screen saying so.
 
 ### Routing & auth flow
 
@@ -48,11 +62,11 @@ Pending-changes count and sync state live in the Zustand store ([store/useStore.
 
 ### Supabase backend
 
-[supabase/schema.sql](supabase/schema.sql) is the source of truth: `users`, `expenses`, `recurring_expenses`, `weekly_reports`, all with per-user RLS (`auth.uid()`). A `handle_new_user` trigger auto-creates the `users` profile row on signup — the client never inserts into `users`, only updates. `recurring_expenses` are monthly amounts; deactivation is a soft toggle (`is_active`), not a delete.
+[supabase/schema.sql](supabase/schema.sql) is the source of truth: `users`, `expenses`, `recurring_expenses`, `weekly_reports`, all with per-user RLS (`auth.uid()`). A `handle_new_user` trigger auto-creates the `users` profile row on signup — the client never inserts into `users`, only updates.
 
 Edge functions in [supabase/functions/](supabase/functions/): `categorize-expense` (Groq categorizes a description into a fixed category list) and `weekly-summary`.
 
-### Language / i18n
+## Language / i18n
 
 User language is persisted on the `users.language` column (default `es`). `useStore.setProfile` and `changeLanguage` keep i18n in sync with the profile; add new strings to both `en` and `es` in [lib/i18n.ts](lib/i18n.ts).
 

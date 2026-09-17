@@ -6,7 +6,7 @@ import {
   getLocalRecurringExpenses, saveLocalRecurringExpense,
   saveLocalRecurringExpenses, deactivateLocalRecurringExpense,
   getLocalProfile, saveLocalProfile, updateLocalProfileField,
-  addPendingChange, getPendingChangesCount
+  addPendingChange, getPendingChanges, getPendingChangesCount
 } from './database'
 import { useStore } from '@/store/useStore'
 
@@ -156,6 +156,15 @@ export async function deactivateRecurringExpense(id: string): Promise<void> {
 
 export async function fetchProfile(userId: string): Promise<any | null> {
   const online = await checkIsOnline()
+
+  // A queued profile edit means the server row is behind the local one. Reading
+  // the server back here would resurrect the old values — most visibly
+  // onboarding_completed: false, which bounces an onboarded user into the
+  // budget wizard again. Trust local until the queue drains.
+  if ((await getPendingChanges()).some(c => c.table_name === 'profile')) {
+    const local = await getLocalProfile()
+    if (local) return local
+  }
 
   if (online) {
     try {

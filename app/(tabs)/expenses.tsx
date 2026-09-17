@@ -441,18 +441,21 @@ export default function ExpensesScreen() {
         }).format(amount);
     };
 
-    // Group expenses by date
-    const filteredExpenses = selectedCategory
-        ? expenses.filter(e => e.category === selectedCategory)
-        : expenses;
-
-    const grouped: Record<string, any[]> = {};
-    filteredExpenses.forEach(e => {
-        const d = e.date;
-        if (!grouped[d]) grouped[d] = [];
-        grouped[d].push(e);
-    });
-    const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+    // Group expenses by date. Scoped to the selected period like the chart above:
+    // rendering every expense ever kept growing (recurring costs add a row a day)
+    // until the whole screen crawled, and it disagreed with the chart total.
+    const { grouped, sortedDates } = useMemo(() => {
+        const grouped: Record<string, any[]> = {};
+        expenses
+            .filter(e => e.date >= rangeStart && e.date <= rangeEnd)
+            .filter(e => !selectedCategory || e.category === selectedCategory)
+            .forEach(e => {
+                const d = e.date;
+                if (!grouped[d]) grouped[d] = [];
+                grouped[d].push(e);
+            });
+        return { grouped, sortedDates: Object.keys(grouped).sort((a, b) => b.localeCompare(a)) };
+    }, [expenses, rangeStart, rangeEnd, selectedCategory]);
 
     // Reusable category picker modal content
     const getCatColor = (cat: string) => CATEGORY_COLORS[cat] || customCategoryColors[cat] || '#6B7280';

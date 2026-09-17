@@ -40,8 +40,14 @@ export async function saveLocalExpense(expense: any): Promise<void> {
   await saveAll(KEYS.expenses, all)
 }
 
+// One read + one write for the whole batch. Looping saveLocalExpense() re-read,
+// re-parsed and re-stringified the entire expense array once per row, which is
+// O(n^2) on every fetch and is what made the app crawl as rows piled up.
 export async function saveLocalExpenses(expenses: any[]): Promise<void> {
-  for (const e of expenses) await saveLocalExpense(e)
+  if (expenses.length === 0) return
+  const byId = new Map<string, any>((await getAll<any>(KEYS.expenses)).map(e => [e.id, e]))
+  for (const e of expenses) byId.set(e.id, e)
+  await saveAll(KEYS.expenses, [...byId.values()])
 }
 
 export async function updateLocalExpense(id: string, changes: any): Promise<void> {
@@ -70,7 +76,10 @@ export async function saveLocalRecurringExpense(rec: any): Promise<void> {
 }
 
 export async function saveLocalRecurringExpenses(recs: any[]): Promise<void> {
-  for (const r of recs) await saveLocalRecurringExpense(r)
+  if (recs.length === 0) return
+  const byId = new Map<string, any>((await getAll<any>(KEYS.recurring)).map(r => [r.id, r]))
+  for (const r of recs) byId.set(r.id, r)
+  await saveAll(KEYS.recurring, [...byId.values()])
 }
 
 export async function deactivateLocalRecurringExpense(id: string): Promise<void> {

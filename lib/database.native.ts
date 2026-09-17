@@ -1,13 +1,20 @@
 import { openDatabaseAsync, type SQLiteDatabase } from 'expo-sqlite'
 
 let db: SQLiteDatabase | null = null
+let opening: Promise<SQLiteDatabase> | null = null
 
 export async function initDatabase(): Promise<SQLiteDatabase> {
   if (db) return db
+  // Startup calls this from more than one place at once; share the one open.
+  if (opening) return opening
+  opening = openAndMigrate().finally(() => { opening = null })
+  return opening
+}
 
-  db = await openDatabaseAsync('spendwise.db')
+async function openAndMigrate(): Promise<SQLiteDatabase> {
+  const handle = await openDatabaseAsync('spendwise.db')
 
-  await db.execAsync(`
+  await handle.execAsync(`
     CREATE TABLE IF NOT EXISTS expenses (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -51,25 +58,28 @@ export async function initDatabase(): Promise<SQLiteDatabase> {
     );
   `)
 
-  return db
+  db = handle
+  return handle
 }
 
-function getDatabase(): SQLiteDatabase {
-  if (!db) throw new Error('Database not initialized. Call initDatabase() first.')
-  return db
+// Opens on first use instead of throwing. Callers (screens, the sync queue, the
+// startup profile load) can run before app/_layout.tsx's initDatabase() resolves,
+// and a throw there turned into "no local data" rather than a visible error.
+function getDatabase(): Promise<SQLiteDatabase> {
+  return db ? Promise.resolve(db) : initDatabase()
 }
 
 // ─── Expenses ──────────────────────────────────────────
 
 export async function getLocalExpenses(userId: string): Promise<any[]> {
-  return getDatabase().getAllAsync(
+  return (await getDatabase()).getAllAsync(
     'SELECT * FROM expenses WHERE user_id = ? ORDER BY date DESC, created_at DESC',
     [userId]
   )
 }
 
 export async function saveLocalExpense(expense: any): Promise<void> {
-  await getDatabase().runAsync(
+  await (await getDatabase()).runAsync(
     `INSERT OR REPLACE INTO expenses (id, user_id, amount, description, category, category_confidence, date, recurring_expense_id, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`,
     [expense.id, expense.user_id, expense.amount, expense.description,
@@ -78,10 +88,15 @@ export async function saveLocalExpense(expense: any): Promise<void> {
   )
 }
 
+// One transaction for the whole batch: SQLite otherwise commits (and fsyncs)
+// once per row, and this runs on every screen focus with every row the user has.
 export async function saveLocalExpenses(expenses: any[]): Promise<void> {
-  for (const e of expenses) {
-    await saveLocalExpense(e)
-  }
+  if (expenses.length === 0) return
+  await (await getDatabase()).withTransactionAsync(async () => {
+    for (const e of expenses) {
+      await saveLocalExpense(e)
+    }
+  })
 }
 
 export async function updateLocalExpense(id: string, changes: any): Promise<void> {
@@ -93,27 +108,27 @@ export async function updateLocalExpense(id: string, changes: any): Promise<void
   if (changes.date !== undefined) { sets.push('date = ?'); vals.push(changes.date) }
   if (sets.length === 0) return
   vals.push(id)
-  await getDatabase().runAsync(
+  await (await getDatabase()).runAsync(
     `UPDATE expenses SET ${sets.join(', ')} WHERE id = ?`,
     vals
   )
 }
 
 export async function deleteLocalExpense(id: string): Promise<void> {
-  await getDatabase().runAsync('DELETE FROM expenses WHERE id = ?', [id])
+  await (await getDatabase()).runAsync('DELETE FROM expenses WHERE id = ?', [id])
 }
 
 // ─── Recurring Expenses ────────────────────────────────
 
 export async function getLocalRecurringExpenses(userId: string): Promise<any[]> {
-  return getDatabase().getAllAsync(
+  return (await getDatabase()).getAllAsync(
     'SELECT * FROM recurring_expenses WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC',
     [userId]
   )
 }
 
 export async function saveLocalRecurringExpense(rec: any): Promise<void> {
-  await getDatabase().runAsync(
+  await (await getDatabase()).runAsync(
     `INSERT OR REPLACE INTO recurring_expenses (id, user_id, amount, description, category, is_active, created_at)
      VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`,
     [rec.id, rec.user_id, rec.amount, rec.description, rec.category,
@@ -122,13 +137,16 @@ export async function saveLocalRecurringExpense(rec: any): Promise<void> {
 }
 
 export async function saveLocalRecurringExpenses(recs: any[]): Promise<void> {
-  for (const r of recs) {
-    await saveLocalRecurringExpense(r)
-  }
+  if (recs.length === 0) return
+  await (await getDatabase()).withTransactionAsync(async () => {
+    for (const r of recs) {
+      await saveLocalRecurringExpense(r)
+    }
+  })
 }
 
 export async function deactivateLocalRecurringExpense(id: string): Promise<void> {
-  await getDatabase().runAsync(
+  await (await getDatabase()).runAsync(
     'UPDATE recurring_expenses SET is_active = 0 WHERE id = ?', [id]
   )
 }
@@ -136,11 +154,11 @@ export async function deactivateLocalRecurringExpense(id: string): Promise<void>
 // ─── Profile ───────────────────────────────────────────
 
 export async function getLocalProfile(): Promise<any | null> {
-  return getDatabase().getFirstAsync('SELECT * FROM profile LIMIT 1')
+  return (await getDatabase()).getFirstAsync('SELECT * FROM profile LIMIT 1')
 }
 
 export async function saveLocalProfile(profile: any): Promise<void> {
-  await getDatabase().runAsync(
+  await (await getDatabase()).runAsync(
     `INSERT OR REPLACE INTO profile (id, email, full_name, salary, weekly_budget, currency, language, onboarding_completed)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [profile.id, profile.email ?? '', profile.full_name ?? '',
@@ -151,7 +169,7 @@ export async function saveLocalProfile(profile: any): Promise<void> {
 }
 
 export async function updateLocalProfileField(id: string, field: string, value: any): Promise<void> {
-  await getDatabase().runAsync(
+  await (await getDatabase()).runAsync(
     `UPDATE profile SET ${field} = ? WHERE id = ?`, [value, id]
   )
 }
@@ -164,28 +182,28 @@ export async function addPendingChange(
   recordId: string | null,
   data: any
 ): Promise<void> {
-  await getDatabase().runAsync(
+  await (await getDatabase()).runAsync(
     'INSERT INTO pending_changes (table_name, operation, record_id, data) VALUES (?, ?, ?, ?)',
     [tableName, operation, recordId, JSON.stringify(data)]
   )
 }
 
 export async function getPendingChanges(): Promise<any[]> {
-  return getDatabase().getAllAsync(
+  return (await getDatabase()).getAllAsync(
     'SELECT * FROM pending_changes ORDER BY id ASC'
   )
 }
 
 export async function removePendingChange(id: number): Promise<void> {
-  await getDatabase().runAsync('DELETE FROM pending_changes WHERE id = ?', [id])
+  await (await getDatabase()).runAsync('DELETE FROM pending_changes WHERE id = ?', [id])
 }
 
 export async function clearPendingChanges(): Promise<void> {
-  await getDatabase().runAsync('DELETE FROM pending_changes')
+  await (await getDatabase()).runAsync('DELETE FROM pending_changes')
 }
 
 export async function getPendingChangesCount(): Promise<number> {
-  const row = await getDatabase().getFirstAsync<{ count: number }>(
+  const row = await (await getDatabase()).getFirstAsync<{ count: number }>(
     'SELECT COUNT(*) as count FROM pending_changes'
   )
   return row?.count ?? 0
