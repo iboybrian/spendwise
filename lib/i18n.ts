@@ -33,6 +33,11 @@ const resources = {
                 overBudgetBar: '100% of current week spent',
                 overflowBar: '{{percent}}% of week {{week}} budget spent',
             },
+            dictation: {
+                button: 'Dictate an expense',
+                failed: "Couldn't understand that. Try again.",
+                micDenied: 'Allow microphone access in your browser to dictate expenses.',
+            },
             expenses: {
                 title: 'Expenses',
                 addExpense: 'Add Expense',
@@ -181,6 +186,11 @@ const resources = {
                 budgetUsedBar: '{{percent}}% de tu presupuesto semanal usado',
                 overBudgetBar: '100% de la semana actual gastado',
                 overflowBar: '{{percent}}% del presupuesto de la semana {{week}} gastado',
+            },
+            dictation: {
+                button: 'Dictar un gasto',
+                failed: 'No te entendí. Intenta de nuevo.',
+                micDenied: 'Permite el acceso al micrófono en tu navegador para dictar gastos.',
             },
             expenses: {
                 title: 'Gastos',

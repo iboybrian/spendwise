@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import { useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Linking from 'expo-linking';
 import { supabase } from '@/lib/supabase';
 import { useStore } from '@/store/useStore';
@@ -178,6 +179,7 @@ export default function RootLayout() {
   }, [isInitialized, session, profile, segments]);
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <ConnectionBanner />
       <Stack screenOptions={{ headerShown: false, animation: Platform.OS === 'web' ? 'none' : 'default' }}>
@@ -189,5 +191,6 @@ export default function RootLayout() {
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

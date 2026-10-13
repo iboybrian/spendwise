@@ -8,10 +8,13 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStore } from '@/store/useStore';
 import { fetchExpenses, insertExpense } from '@/lib/data';
+import { supabase } from '@/lib/supabase';
+import { checkIsOnline } from '@/lib/connectivity';
+import { canDictate, listen, speechLang, parseAmount } from '@/lib/speech';
 import { toLocalDateStr, startOfWeek } from '@/lib/dates';
 import {
   Plus, Coffee, Car, Film, Heart, ShoppingBag,
-  Home as HomeIcon, Book, Package, X, ChevronDown, Check
+  Home as HomeIcon, Book, Package, X, ChevronDown, Check, Mic
 } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -90,6 +93,7 @@ export default function HomeScreen() {
 
   // Quick-add modal state
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [listening, setListening] = useState(false);
   const [quickAmount, setQuickAmount] = useState('');
   const [quickDescription, setQuickDescription] = useState('');
   const [quickCategory, setQuickCategory] = useState('Other');
@@ -213,7 +217,7 @@ export default function HomeScreen() {
       );
   };
 
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isDark = colorScheme === 'dark';
   const bgColor = isDark ? '#121212' : '#F9FAFB';
   const cardBg = isDark ? '#1E1E1E' : '#FFFFFF';
@@ -289,6 +293,37 @@ export default function HomeScreen() {
       Alert.alert(t('common.error'), err.message || 'Failed to save expense.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Dictate → prefill the Quick-Add modal → user just confirms with Save.
+  const handleDictate = async () => {
+    setListening(true);
+    try {
+      const text = await listen(speechLang(i18n.language));
+      if (!text) return;
+
+      let amount = parseAmount(text);
+      let description = text.charAt(0).toUpperCase() + text.slice(1);
+      let category = 'Other';
+      if (await checkIsOnline()) {
+        // `description` too, so a not-yet-redeployed function still categorizes.
+        const { data } = await supabase.functions.invoke('categorize-expense', {
+          body: { text, description: text },
+        });
+        if (data?.category) category = data.category;
+        if (typeof data?.amount === 'number') amount = data.amount;
+        if (data?.description) description = data.description;
+      }
+
+      setQuickAmount(amount != null ? String(amount) : '');
+      setQuickDescription(description);
+      setQuickCategory(category);
+      setShowQuickAdd(true);
+    } catch (err: any) {
+      Alert.alert(t('common.error'), err?.message === 'not-allowed' ? t('dictation.micDenied') : t('dictation.failed'));
+    } finally {
+      setListening(false);
     }
   };
 
@@ -515,6 +550,19 @@ export default function HomeScreen() {
         </AnimatedPressable>
       </MotiView>
 
+      {canDictate && (
+        <View style={styles.micFabContainer}>
+          <AnimatedPressable
+            style={[styles.micFab, { backgroundColor: listening ? '#EF4444' : cardBg }]}
+            onPress={handleDictate}
+            disabled={listening}
+            accessibilityLabel={t('dictation.button')}
+          >
+            {listening ? <ActivityIndicator color="#FFF" /> : <Mic color={primaryColor} size={24} />}
+          </AnimatedPressable>
+        </View>
+      )}
+
       {/* ─── Quick-Add Modal (slide-up) ─── */}
       <Modal
         visible={showQuickAdd}
@@ -555,7 +603,7 @@ export default function HomeScreen() {
                     if (filtered.split('.').length <= 2) setQuickAmount(filtered);
                   }}
                   keyboardType="decimal-pad"
-                  autoFocus
+                  autoFocus={!quickAmount}
                 />
               </View>
 
@@ -651,6 +699,13 @@ const styles = StyleSheet.create({
   expenseCategory: { fontSize: 14 },
   expenseAmount: { fontSize: 18, fontWeight: '700', flexShrink: 1, minWidth: 0 },
   fabContainer: { position: 'absolute', bottom: 24, right: 24 },
+  micFabContainer: { position: 'absolute', bottom: 100, right: 30 },
+  micFab: {
+    width: 52, height: 52, borderRadius: 26,
+    justifyContent: 'center', alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15, shadowRadius: 10, elevation: 6,
+  },
   fab: {
     width: 64, height: 64, borderRadius: 32,
     justifyContent: 'center', alignItems: 'center',
