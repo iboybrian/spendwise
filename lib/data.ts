@@ -20,6 +20,11 @@ async function bumpPending(): Promise<void> {
 
 // ─── Expenses ──────────────────────────────────────────
 
+// Local copies only: instant, for painting a screen while the network call is
+// still in flight. Always follow up with fetchExpenses / fetchRecurringExpenses.
+export const getCachedExpenses = getLocalExpenses
+export const getCachedRecurringExpenses = getLocalRecurringExpenses
+
 export async function fetchExpenses(userId: string): Promise<any[]> {
   const online = await checkIsOnline()
 

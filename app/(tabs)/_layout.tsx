@@ -5,6 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import * as haptics from '@/lib/haptics';
 import { Home, List, User } from 'lucide-react-native';
 
 // Swipe order, left to right. `add` is hidden from the bar, so it's not in here.
@@ -20,7 +21,9 @@ export default function TabLayout() {
   const goBy = (step: 1 | -1) => {
     const i = SWIPE_ORDER.indexOf(current);
     const next = i < 0 ? undefined : SWIPE_ORDER[i + step];
-    if (next) router.navigate(next === 'index' ? '/(tabs)' : `/(tabs)/${next}`);
+    if (!next) return;
+    haptics.select();
+    router.navigate(next === 'index' ? '/(tabs)' : `/(tabs)/${next}`);
   };
 
   // Horizontal swipe switches tabs. failOffsetY hands vertical drags back to the
@@ -40,6 +43,7 @@ export default function TabLayout() {
     <GestureDetector gesture={swipe} touchAction="pan-y">
       <View style={{ flex: 1 }}>
         <Tabs
+          screenListeners={{ tabPress: haptics.select }}
           screenOptions={{
             tabBarActiveTintColor: '#4F46E5',
             headerShown: false,

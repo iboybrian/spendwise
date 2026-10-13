@@ -1,15 +1,20 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
-    ActivityIndicator, Modal, Pressable, TextInput, Alert, Platform
+    ActivityIndicator, Modal, Pressable, TextInput, Alert, Platform, RefreshControl
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useStore } from '@/store/useStore';
 import { supabase } from '@/lib/supabase';
 import {
   fetchExpenses, insertExpense, updateExpense, deleteExpense,
   fetchRecurringExpenses, insertRecurringExpense, deactivateRecurringExpense,
+  getCachedExpenses, getCachedRecurringExpenses,
 } from '@/lib/data';
+import { formatMoney, formatDay, categoryLabel } from '@/lib/format';
+import { Skeleton, SkeletonRows } from '@/components/skeleton';
+import * as haptics from '@/lib/haptics';
 import { checkIsOnline } from '@/lib/connectivity';
 import { toLocalDateStr, startOfWeek } from '@/lib/dates';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -64,7 +69,11 @@ export default function ExpensesScreen() {
     const [expenses, setExpenses] = useState<any[]>([]);
     const [recurringExpenses, setRecurringExpenses] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+    const loadedFromNetwork = useRef(false);
+    // Day the recurring generator last ran; it only has new work once per day.
+    const recurringCheckedOn = useRef<string | null>(null);
 
     // Date slicer and chart state
     const [slicerRange, setSlicerRange] = useState<string>('This Week');
@@ -156,10 +165,6 @@ export default function ExpensesScreen() {
         ]);
     }, [t, customCategories]);
 
-    useEffect(() => {
-        fetchData();
-    }, [slicerRange]);
-
     // Inclusive [start, end] of the selected period, as local YYYY-MM-DD.
     const [rangeStart, rangeEnd] = useMemo(() => {
         const now = new Date();
@@ -197,22 +202,35 @@ export default function ExpensesScreen() {
     }, [expenses, rangeStart, rangeEnd]);
 
     const fetchData = useCallback(async () => {
-        setLoading(true);
+        if (!profile?.id) return;
         try {
-            const online = await checkIsOnline();
-
-            // Fetch recurring expenses
-            const recData = profile?.id ? await fetchRecurringExpenses(profile.id) : [];
-            setRecurringExpenses(recData || []);
-
-            // Process recurring: generate daily entries for active recurring expenses
-            if (recData && recData.length > 0 && online) {
-                await processRecurringExpenses(recData);
+            // Paint from the local cache first; the network refresh below then
+            // updates the screen in place instead of blanking it behind a spinner.
+            if (!loadedFromNetwork.current) {
+                const [cachedExp, cachedRec] = await Promise.all([
+                    getCachedExpenses(profile.id),
+                    getCachedRecurringExpenses(profile.id),
+                ]);
+                if (cachedExp.length) {
+                    setExpenses(cachedExp);
+                    setRecurringExpenses(cachedRec);
+                    setLoading(false);
+                }
             }
 
-            // Fetch all expenses
-            const expData = profile?.id ? await fetchExpenses(profile.id) : [];
-            setExpenses(expData || []);
+            const online = await checkIsOnline();
+            const recData = await fetchRecurringExpenses(profile.id);
+            setRecurringExpenses(recData || []);
+
+            // Generate today's (and any missed) recurring entries, once per day.
+            const today = toLocalDateStr();
+            if (recData?.length && online && recurringCheckedOn.current !== today) {
+                await processRecurringExpenses(recData);
+                recurringCheckedOn.current = today;
+            }
+
+            setExpenses((await fetchExpenses(profile.id)) || []);
+            loadedFromNetwork.current = true;
         } catch (e) {
             console.error('Error fetching expenses:', e);
         } finally {
@@ -220,13 +238,26 @@ export default function ExpensesScreen() {
         }
     }, [profile?.id]);
 
+    // Refetch on focus so expenses added from Home show up here.
+    useFocusEffect(
+        useCallback(() => {
+            fetchData();
+        }, [fetchData])
+    );
+
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await fetchData();
+        setRefreshing(false);
+    };
+
     // Process recurring expenses: create daily entries for today and any missed days
     const processRecurringExpenses = async (recurring: any[]) => {
         const today = new Date();
         const todayStr = toLocalDateStr(today);
         const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
 
-        for (const rec of recurring) {
+        await Promise.all(recurring.map(async (rec) => {
             const dailyAmount = Number(rec.amount) / daysInMonth;
             const createdDate = new Date(rec.created_at);
             const startStr = toLocalDateStr(createdDate);
@@ -279,7 +310,7 @@ export default function ExpensesScreen() {
                 // expenses from being recorded at all, and nothing on screen says so.
                 if (error) throw error;
             }
-        }
+        }));
     };
 
     // Save spontaneous expense
@@ -302,6 +333,7 @@ export default function ExpensesScreen() {
                 category_confidence: 1,
                 date: toLocalDateStr(),
             });
+            haptics.success();
             setAddAmount(''); setAddDescription(''); setAddCategory('Other');
             setShowAddModal(false);
             fetchData();
@@ -330,8 +362,10 @@ export default function ExpensesScreen() {
                 description: recDescription.trim(),
                 category: recCategory,
             });
+            haptics.success();
             setRecAmount(''); setRecDescription(''); setRecCategory('Other');
             setShowRecurringModal(false);
+            recurringCheckedOn.current = null;
             fetchData();
         } catch (err: any) {
             Alert.alert(t('common.error'), err.message || 'Failed to save.');
@@ -345,7 +379,7 @@ export default function ExpensesScreen() {
         if (Platform.OS === 'web') {
             const confirmed = window.confirm(`${t('expenses.removeRecurring')}\n${t('expenses.removeRecurringMsg', { description })}`);
             if (confirmed) {
-                await deactivateRecurringExpense(id);
+                haptics.warn(); await deactivateRecurringExpense(id);
                 fetchData();
             }
         } else {
@@ -357,7 +391,7 @@ export default function ExpensesScreen() {
                     {
                         text: t('common.delete'), style: 'destructive',
                         onPress: async () => {
-                            await deactivateRecurringExpense(id);
+                            haptics.warn(); await deactivateRecurringExpense(id);
                             fetchData();
                         }
                     }
@@ -372,7 +406,7 @@ export default function ExpensesScreen() {
             const confirmed = window.confirm(`${t('expenses.deleteExpense')}\n${t('expenses.deleteConfirm')}`);
             if (confirmed) {
                 setShowActionSheet(false);
-                await deleteExpense(id);
+                haptics.warn(); await deleteExpense(id);
                 setSelectedExpense(null);
                 fetchData();
             }
@@ -382,7 +416,7 @@ export default function ExpensesScreen() {
                 {
                     text: t('common.delete'), style: 'destructive',
                     onPress: async () => {
-                        await deleteExpense(id);
+                        haptics.warn(); await deleteExpense(id);
                         setShowActionSheet(false);
                         setSelectedExpense(null);
                         fetchData();
@@ -425,6 +459,7 @@ export default function ExpensesScreen() {
                 description: editDescription.trim(),
                 category: editCategory,
             });
+            haptics.success();
             setShowEditModal(false);
             setSelectedExpense(null);
             fetchData();
@@ -435,11 +470,15 @@ export default function ExpensesScreen() {
         }
     };
 
-    const formatCurrency = (amount: number) => {
-        return new Intl.NumberFormat('en-US', {
-            style: 'currency', currency: profile?.currency || 'USD'
-        }).format(amount);
+    const formatCurrency = (amount: number) => formatMoney(amount, profile?.currency || 'USD');
+
+    // Tapping a slice or legend row filters the list to that category; tap again to clear.
+    const toggleCategory = (category: string) => {
+        haptics.select();
+        setSelectedCategory((cur) => (cur === category ? null : category));
     };
+    const periodTotal = summaryData.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
+    const selectedSlice = summaryData.find((d) => d.category === selectedCategory);
 
     // Group expenses by date. Scoped to the selected period like the chart above:
     // rendering every expense ever kept growing (recurring costs add a row a day)
@@ -558,7 +597,10 @@ export default function ExpensesScreen() {
 
     return (
         <View style={[styles.container, { backgroundColor: bgColor }]}>
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primaryColor} colors={[primaryColor]} />}
+            >
                 {/* Header */}
                 <View style={[styles.header, { backgroundColor: cardBg, borderBottomColor: borderColor }]}>
                     <Text style={[styles.headerTitle, { color: textColor }]}>{t('expenses.title')}</Text>
@@ -607,7 +649,14 @@ export default function ExpensesScreen() {
 
                     <View style={styles.chartWrapper}>
                         {loading ? (
-                            <ActivityIndicator size="large" color={primaryColor} />
+                            <View style={styles.chartRow}>
+                                <Skeleton color={isDark ? '#2A2A2A' : '#E5E7EB'} style={{ width: 150, height: 150, borderRadius: 75 }} />
+                                <View style={[styles.legendCol, { gap: 12 }]}>
+                                    {[0, 1, 2].map((i) => (
+                                        <Skeleton key={i} color={isDark ? '#2A2A2A' : '#E5E7EB'} style={{ height: 28, borderRadius: 8 }} />
+                                    ))}
+                                </View>
+                            </View>
                         ) : summaryData.length > 0 ? (
                             <View style={styles.chartRow}>
                                 <View style={styles.chartCol}>
@@ -620,44 +669,54 @@ export default function ExpensesScreen() {
                                             value: Number(item.total) || 0,
                                             color: getCatColor(item.category),
                                         }))}
-                                        centerLabelComponent={() => {
-                                            const total = summaryData.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
-                                            return (
-                                                <View style={{ justifyContent: 'center', alignItems: 'center' }}>
-                                                    <Text style={{ fontSize: 16, color: textColor, fontWeight: 'bold' }}>
-                                                        {formatCurrency(total)}
-                                                    </Text>
-                                                    <Text style={{ fontSize: 11, color: secondaryText }}>Total</Text>
-                                                </View>
-                                            );
-                                        }}
+                                        focusOnPress
+                                        toggleFocusOnPress
+                                        focusedPieIndex={summaryData.findIndex(d => d.category === selectedCategory)}
+                                        extraRadius={6}
+                                        onPress={(_: unknown, index: number) => toggleCategory(summaryData[index].category)}
+                                        centerLabelComponent={() => (
+                                            <View style={{ justifyContent: 'center', alignItems: 'center', maxWidth: 100 }}>
+                                                <Text style={{ fontSize: 16, color: textColor, fontWeight: 'bold' }} numberOfLines={1} adjustsFontSizeToFit>
+                                                    {formatCurrency(selectedSlice ? selectedSlice.total : periodTotal)}
+                                                </Text>
+                                                <Text style={{ fontSize: 11, color: secondaryText }} numberOfLines={1}>
+                                                    {selectedSlice ? categoryLabel(selectedSlice.category) : 'Total'}
+                                                </Text>
+                                            </View>
+                                        )}
                                     />
                                 </View>
                                 <View style={styles.legendCol}>
                                     <ScrollView style={{ maxHeight: 160 }} showsVerticalScrollIndicator={false}>
-                                        {summaryData.map((item, idx) => {
-                                            const totalAll = summaryData.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
+                                        {summaryData.map((item) => {
                                             const val = Number(item.total) || 0;
-                                            const perc = totalAll > 0 ? ((val / totalAll) * 100).toFixed(1) : '0';
+                                            const perc = periodTotal > 0 ? ((val / periodTotal) * 100).toFixed(1) : '0';
+                                            const dimmed = selectedCategory !== null && selectedCategory !== item.category;
                                             return (
-                                                <View key={idx} style={styles.legendItem}>
+                                                <TouchableOpacity
+                                                    key={item.category}
+                                                    style={[styles.legendItem, { opacity: dimmed ? 0.4 : 1 }]}
+                                                    onPress={() => toggleCategory(item.category)}
+                                                    accessibilityRole="button"
+                                                    accessibilityState={{ selected: selectedCategory === item.category }}
+                                                >
                                                     <View style={[styles.legendColor, { backgroundColor: getCatColor(item.category) }]} />
                                                     <View style={{ flex: 1 }}>
-                                                        <Text style={{ color: textColor, fontSize: 13, fontWeight: '500' }}>
-                                                            {t(`categories.${item.category.toLowerCase()}`, { defaultValue: item.category })}
+                                                        <Text style={{ color: textColor, fontSize: 13, fontWeight: selectedCategory === item.category ? '700' : '500' }}>
+                                                            {categoryLabel(item.category)}
                                                         </Text>
                                                         <Text style={{ color: secondaryText, fontSize: 11 }}>
                                                             {formatCurrency(val)} ({perc}%)
                                                         </Text>
                                                     </View>
-                                                </View>
+                                                </TouchableOpacity>
                                             )
                                         })}
                                     </ScrollView>
                                 </View>
                             </View>
                         ) : (
-                            <Text style={[{ color: secondaryText, textAlign: 'center', marginTop: 20 }]}>No data for this period.</Text>
+                            <Text style={[{ color: secondaryText, textAlign: 'center', marginTop: 20 }]}>{t('expenses.noDataPeriod')}</Text>
                         )}
                     </View>
                 </View>
@@ -698,7 +757,7 @@ export default function ExpensesScreen() {
                                         <View style={styles.recurringInfo}>
                                             <Text style={[styles.recurringName, { color: textColor }]}>{rec.description}</Text>
                                             <Text style={[styles.recurringDetail, { color: secondaryText }]}>
-                                                {formatCurrency(Number(rec.amount))}/mo · {formatCurrency(dailyAmt)}/day · {rec.category}
+                                                {formatCurrency(Number(rec.amount))}{t('expenses.perMonth')} · {formatCurrency(dailyAmt)}{t('expenses.perDay')} · {categoryLabel(rec.category)}
                                             </Text>
                                         </View>
                                         <TouchableOpacity
@@ -720,24 +779,33 @@ export default function ExpensesScreen() {
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: secondaryText }]}>{t('expenses.recentTitle')}</Text>
                     {loading ? (
-                        <ActivityIndicator style={{ marginTop: 20 }} />
+                        <View style={{ paddingHorizontal: 20, marginTop: 8 }}>
+                            <SkeletonRows color={isDark ? '#2A2A2A' : '#E5E7EB'} rowColor={cardBg} />
+                        </View>
                     ) : sortedDates.length === 0 ? (
                         <View style={[styles.emptyState, { backgroundColor: cardBg }]}>
-                            <Text style={[styles.emptyText, { color: secondaryText }]}>{t('expenses.emptyExpenses')}</Text>
+                            <Text style={[styles.emptyText, { color: secondaryText }]}>
+                                {expenses.length === 0 ? t('expenses.emptyExpenses') : t('expenses.noDataPeriod')}
+                            </Text>
                         </View>
                     ) : (
                         sortedDates.map(date => (
                             <View key={date}>
-                                <Text style={[styles.dateLabel, { color: secondaryText }]}>
-                                    {new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                                </Text>
+                                <View style={styles.dateRow}>
+                                    <Text style={[styles.dateLabel, { color: secondaryText }]}>{formatDay(date)}</Text>
+                                    <Text style={[styles.dateLabel, { color: secondaryText }]}>
+                                        {formatCurrency(grouped[date].reduce((sum, e) => sum + Number(e.amount), 0))}
+                                    </Text>
+                                </View>
                                 {grouped[date].map((expense) => (
                                     <TouchableOpacity
                                         key={expense.id}
                                         style={[styles.expenseItem, { backgroundColor: cardBg }]}
+                                        onPress={() => { haptics.tap(); handleExpenseLongPress(expense); }}
                                         onLongPress={() => handleExpenseLongPress(expense)}
+                                        activeOpacity={0.7}
                                     >
-                                        <View style={[styles.iconBox, { backgroundColor: isDark ? '#333' : '#F3F4F6' }]}>
+                                        <View style={[styles.iconBox, { backgroundColor: getCatColor(expense.category) + (isDark ? '33' : '1F') }]}>
                                             {getCategoryIcon(expense.category, getCatColor(expense.category))}
                                         </View>
                                         <View style={styles.expenseInfo}>
@@ -745,7 +813,7 @@ export default function ExpensesScreen() {
                                                 {expense.description}
                                             </Text>
                                             <Text style={[styles.expenseCategory, { color: secondaryText }]}>
-                                                {expense.category}
+                                                {categoryLabel(expense.category)}
                                                 {expense.recurring_expense_id ? ` · ${t('expenses.monthlyLabel')}` : ''}
                                             </Text>
                                         </View>
@@ -1010,7 +1078,8 @@ const styles = StyleSheet.create({
     },
     filterText: { fontSize: 14, fontWeight: '600' },
 
-    dateLabel: { fontSize: 13, fontWeight: '600', letterSpacing: 0.5, marginTop: 16, marginBottom: 8, paddingHorizontal: 20 },
+    dateRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 16, marginBottom: 8, paddingHorizontal: 20 },
+    dateLabel: { fontSize: 13, fontWeight: '600', letterSpacing: 0.5 },
     expenseItem: {
         flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16,
         marginBottom: 8, marginHorizontal: 20,

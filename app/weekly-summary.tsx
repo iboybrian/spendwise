@@ -135,7 +135,7 @@ export default function WeeklySummaryScreen() {
 
                         <TouchableOpacity
                             style={[styles.button, { backgroundColor: isDark ? '#333' : '#F3F4F6' }]}
-                            onPress={() => router.push('/(tabs)/history')}
+                            onPress={() => router.push('/(tabs)/expenses')}
                         >
                             <Text style={[styles.buttonText, { color: primaryColor }]}>
                                 See Full History

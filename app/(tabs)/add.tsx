@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { insertExpense } from '@/lib/data';
 import { toLocalDateStr } from '@/lib/dates';
 import { checkIsOnline } from '@/lib/connectivity';
+import * as haptics from '@/lib/haptics';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Coffee, Car, Film, Heart, ShoppingBag, Home, Book, Package, ChevronDown, Check, ArrowLeft } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -46,7 +47,7 @@ export default function AddExpenseScreen() {
     const [isSaving, setIsSaving] = useState(false);
     const [showCategoryPicker, setShowCategoryPicker] = useState(false);
 
-    const typingTimer = useRef<NodeJS.Timeout | null>(null);
+    const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const [customCategories, setCustomCategories] = useState<string[]>([]);
     const [customCategoryColors, setCustomCategoryColors] = useState<Record<string, string>>({});
@@ -131,6 +132,7 @@ export default function AddExpenseScreen() {
                 category_confidence: confidence,
                 date,
             });
+            haptics.success();
 
             router.back();
         } catch (err: any) {

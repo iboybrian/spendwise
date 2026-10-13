@@ -1,13 +1,16 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   ActivityIndicator, Modal, TextInput, Alert, Pressable,
-  KeyboardAvoidingView, Platform, TouchableOpacity
+  KeyboardAvoidingView, Platform, TouchableOpacity, RefreshControl
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStore } from '@/store/useStore';
-import { fetchExpenses, insertExpense } from '@/lib/data';
+import { fetchExpenses, getCachedExpenses, insertExpense } from '@/lib/data';
+import { formatMoney, appLocale, categoryLabel } from '@/lib/format';
+import { SkeletonRows } from '@/components/skeleton';
+import * as haptics from '@/lib/haptics';
 import { supabase } from '@/lib/supabase';
 import { checkIsOnline } from '@/lib/connectivity';
 import { canDictate, listen, speechLang, parseAmount } from '@/lib/speech';
@@ -21,7 +24,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useFocusEffect } from '@react-navigation/native';
 import { MotiView } from 'moti';
 import Animated, {
-  useSharedValue, useAnimatedStyle, withSpring, interpolate
+  useSharedValue, useAnimatedStyle, withSpring, interpolate, useReducedMotion
 } from 'react-native-reanimated';
 
 const CATEGORIES = ['Food', 'Transport', 'Entertainment', 'Health', 'Shopping', 'Home', 'Education', 'Other'];
@@ -67,7 +70,7 @@ function AnimatedPressable({ children, style, onPress, disabled, ...rest }: any)
   return (
     <Animated.View style={animStyle}>
       <Pressable
-        onPressIn={() => { scale.value = withSpring(0.95, { damping: 15, stiffness: 200 }); }}
+        onPressIn={() => { haptics.tap(); scale.value = withSpring(0.95, { damping: 15, stiffness: 200 }); }}
         onPressOut={() => { scale.value = withSpring(1, { damping: 15, stiffness: 200 }); }}
         onPress={onPress}
         disabled={disabled}
@@ -85,11 +88,29 @@ export default function HomeScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
 
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [weeklySpent, setWeeklySpent] = useState(0);
-  const [todaySpent, setTodaySpent] = useState(0);
-  const [categoryBreakdown, setCategoryBreakdown] = useState<Record<string, number>>({});
+  // null until the first load (cache or network) lands; drives the skeleton.
+  const [allExpenses, setAllExpenses] = useState<any[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const loadedFromNetwork = useRef(false);
+  const loading = allExpenses === null;
+
+  const { todaySpent, weeklySpent, categoryBreakdown, expenses } = useMemo(() => {
+    const todayStr = toLocalDateStr();
+    const weekStartStr = toLocalDateStr(startOfWeek());
+    let todaySpent = 0;
+    let weeklySpent = 0;
+    const categoryBreakdown: Record<string, number> = {};
+    for (const e of allExpenses ?? []) {
+      const amount = Number(e.amount);
+      if (e.date === todayStr) todaySpent += amount;
+      if (e.date >= weekStartStr && e.date <= todayStr) {
+        weeklySpent += amount;
+        const cat = e.category || 'Other';
+        categoryBreakdown[cat] = (categoryBreakdown[cat] || 0) + amount;
+      }
+    }
+    return { todaySpent, weeklySpent, categoryBreakdown, expenses: (allExpenses ?? []).slice(0, 5) };
+  }, [allExpenses]);
 
   // Quick-add modal state
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -228,43 +249,36 @@ export default function HomeScreen() {
   const borderColor = isDark ? '#333333' : '#E0E0E0';
   const modalBg = isDark ? '#1A1A2E' : '#FFFFFF';
 
-  // Re-fetch every time this tab is focused (picks up edits/deletes from Expenses tab)
-  useFocusEffect(
-    useCallback(() => {
-      fetchDashboardData();
-    }, [])
-  );
-
-    const fetchDashboardData = async () => {
-        try {
-            setLoading(true);
-            const todayStr = toLocalDateStr();
-            const weekStartStr = toLocalDateStr(startOfWeek());
-
-            const allExpenses = profile?.id ? await fetchExpenses(profile.id) : [];
-
-      const todayTotal = allExpenses
-        .filter(e => e.date === todayStr)
-        .reduce((sum, e) => sum + Number(e.amount), 0);
-
-      const weeklyExpenses = allExpenses.filter(e => e.date >= weekStartStr && e.date <= todayStr);
-      const weeklyTotal = weeklyExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
-
-      const breakdown: Record<string, number> = {};
-      weeklyExpenses.forEach(e => {
-        const cat = e.category || 'Other';
-        breakdown[cat] = (breakdown[cat] || 0) + Number(e.amount);
-      });
-
-      setTodaySpent(todayTotal);
-      setWeeklySpent(weeklyTotal);
-      setCategoryBreakdown(breakdown);
-      setExpenses(allExpenses.slice(0, 5));
+  const fetchDashboardData = useCallback(async () => {
+    if (!profile?.id) return;
+    try {
+      // First paint comes from the local cache so the screen is never blank or
+      // spinning; the network result replaces it a moment later.
+      if (!loadedFromNetwork.current) {
+        const cached = await getCachedExpenses(profile.id);
+        if (cached.length) setAllExpenses((prev) => prev ?? cached);
+      }
+      setAllExpenses(await fetchExpenses(profile.id));
+      loadedFromNetwork.current = true;
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
-      setLoading(false);
+      setAllExpenses((prev) => prev ?? []);
     }
+  }, [profile?.id]);
+
+  // Re-fetch every time this tab is focused (picks up edits/deletes from Expenses tab).
+  // Refreshes in place: the current numbers stay on screen until new ones arrive.
+  useFocusEffect(
+    useCallback(() => {
+      fetchDashboardData();
+    }, [fetchDashboardData])
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchDashboardData();
+    setRefreshing(false);
   };
 
   const handleQuickSave = async () => {
@@ -286,6 +300,7 @@ export default function HomeScreen() {
         category_confidence: 1,
         date: toLocalDateStr(),
       });
+      haptics.success();
       setQuickAmount(''); setQuickDescription(''); setQuickCategory('Other');
       setShowQuickAdd(false);
       fetchDashboardData();
@@ -356,21 +371,32 @@ export default function HomeScreen() {
     }
   }
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: profile?.currency || 'USD' }).format(amount);
+  const formatCurrency = (amount: number) => formatMoney(amount, profile?.currency || 'USD');
+
+  // What's left of the week's budget, spread over the days remaining (today included).
+  const daysLeftInWeek = 7 - ((new Date().getDay() + 6) % 7);
+  const leftPerDay = Math.max(0, currentBudget - weeklySpent) / daysLeftInWeek;
+
+  // Motion only conveys state here: short, and off entirely under Reduce Motion.
+  const reduceMotion = useReducedMotion();
+  const timing = (duration: number, delay = 0) =>
+    ({ type: 'timing' as const, duration: reduceMotion ? 0 : duration, delay: reduceMotion ? 0 : delay });
 
   const firstName = profile?.full_name?.split(' ')[0] || 'User';
-  const dateString = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const dateString = new Date().toLocaleDateString(appLocale(), { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primaryColor} colors={[primaryColor]} />}
+      >
 
         {/* ─── Header with fade-in ─── */}
         <MotiView
           from={{ opacity: 0, translateY: -10 }}
           animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 500 }}
+          transition={timing(250)}
           style={styles.header}
         >
           <View style={{ flexShrink: 1 }}>
@@ -391,7 +417,7 @@ export default function HomeScreen() {
         <MotiView
           from={{ opacity: 0, translateY: 20 }}
           animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 500, delay: 100 }}
+          transition={timing(250, 50)}
         >
           <View style={[styles.card, { backgroundColor: cardBg }]}>
             <Text style={[styles.cardTitle, { color: secondaryText }]}>{t('home.weeklyBudget')}</Text>
@@ -439,7 +465,7 @@ export default function HomeScreen() {
                         key={`${seg.cat}-${i}`}
                         from={{ width: '0%' as any }}
                         animate={{ width: `${seg.width}%` as any }}
-                        transition={{ type: 'timing', duration: 800, delay: 300 + barIndex * 200 }}
+                        transition={timing(450, 100 + barIndex * 100)}
                         style={[styles.progressSegment, { backgroundColor: getCatColor(seg.cat) }]}
                       />
                     ))}
@@ -461,7 +487,7 @@ export default function HomeScreen() {
                   <View key={cat} style={styles.legendItem}>
                     <View style={[styles.legendDot, { backgroundColor: getCatColor(cat) }]} />
                     <Text style={[styles.legendText, { color: secondaryText }]}>
-                      {cat} {formatCurrency(amount)}
+                      {categoryLabel(cat)} {formatCurrency(amount)}
                     </Text>
                   </View>
                 ))}
@@ -474,13 +500,27 @@ export default function HomeScreen() {
         <MotiView
           from={{ opacity: 0, translateY: 20 }}
           animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 500, delay: 200 }}
+          transition={timing(250, 100)}
           style={styles.metricsRow}
         >
           <View style={[styles.metricCard, { backgroundColor: cardBg }]}>
             <Text style={[styles.metricLabel, { color: secondaryText }]}>{t('home.todaySpent')}</Text>
-            <Text style={[styles.metricValue, { color: textColor }]}>{formatCurrency(todaySpent)}</Text>
+            <Text style={[styles.metricValue, { color: textColor }]} numberOfLines={1} adjustsFontSizeToFit>
+              {formatCurrency(todaySpent)}
+            </Text>
           </View>
+          {currentBudget > 0 && (
+            <View style={[styles.metricCard, { backgroundColor: cardBg }]}>
+              <Text style={[styles.metricLabel, { color: secondaryText }]}>{t('home.leftPerDay')}</Text>
+              <Text
+                style={[styles.metricValue, { color: leftPerDay > 0 ? '#059669' : '#EF4444' }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {formatCurrency(leftPerDay)}
+              </Text>
+            </View>
+          )}
         </MotiView>
 
         {/* ─── Recent Expenses (staggered) ─── */}
@@ -493,12 +533,12 @@ export default function HomeScreen() {
           </View>
 
           {loading ? (
-            <ActivityIndicator style={{ marginTop: 20 }} />
+            <SkeletonRows color={isDark ? '#2A2A2A' : '#E5E7EB'} rowColor={cardBg} />
           ) : expenses.length === 0 ? (
             <MotiView
               from={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ type: 'timing', duration: 400 }}
+              transition={timing(200)}
             >
               <View style={[styles.emptyState, { backgroundColor: cardBg }]}>
                 <Text style={[styles.emptyText, { color: secondaryText }]}>{t('home.emptyExpenses')}</Text>
@@ -510,18 +550,21 @@ export default function HomeScreen() {
                 key={expense.id || index}
                 from={{ opacity: 0, translateY: 20 }}
                 animate={{ opacity: 1, translateY: 0 }}
-                transition={{ type: 'timing', duration: 400, delay: 300 + index * 100 }}
+                transition={timing(250, index * 40)}
               >
-                <AnimatedPressable style={[styles.expenseItem, { backgroundColor: cardBg }]}>
-                  <View style={[styles.iconBox, { backgroundColor: isDark ? '#333' : '#F3F4F6' }]}>
-                    {getCategoryIcon(expense.category, primaryColor)}
+                <AnimatedPressable
+                  style={[styles.expenseItem, { backgroundColor: cardBg }]}
+                  onPress={() => router.push('/(tabs)/expenses')}
+                >
+                  <View style={[styles.iconBox, { backgroundColor: getCatColor(expense.category) + (isDark ? '33' : '1F') }]}>
+                    {getCategoryIcon(expense.category, getCatColor(expense.category))}
                   </View>
                   <View style={styles.expenseInfo}>
                     <Text style={[styles.expenseTitle, { color: textColor }]} numberOfLines={1}>
                       {expense.description}
                     </Text>
                     <Text style={[styles.expenseCategory, { color: secondaryText }]}>
-                      {expense.category}
+                      {categoryLabel(expense.category)}
                     </Text>
                   </View>
                   <Text style={[styles.expenseAmount, { color: textColor }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -539,7 +582,7 @@ export default function HomeScreen() {
       <MotiView
         from={{ scale: 0, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: 'spring', damping: 14, stiffness: 150, delay: 600 }}
+        transition={timing(250, 150)}
         style={styles.fabContainer}
       >
         <AnimatedPressable
@@ -675,7 +718,7 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center' },
   legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 4 },
   legendText: { fontSize: 12, fontWeight: '500' },
-  metricsRow: { flexDirection: 'row', marginBottom: 24 },
+  metricsRow: { flexDirection: 'row', gap: 12, marginBottom: 24 },
   metricCard: {
     flex: 1, padding: 20, borderRadius: 20,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
